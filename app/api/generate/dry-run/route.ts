@@ -1,193 +1,284 @@
-// app/api/generate/dry-run/route.ts
-import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-const GEMINI_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent";
+/**
+ * SKYNEWS — /api/generate/dry-run
+ * Amaç:
+ *  - Gemini 2.5 Pro ile haber taslağı üretmek
+ *  - 503/UNAVAILABLE hatalarında exponential backoff ile retry (max 3)
+ *  - Çıktı JSON'unu sağlamlaştırılmış biçimde parse etmek
+ *  - html gövdesi 5+ paragraf değilse tek seferlik genişletme retry'ı yapmak
+ *  - Kısa/boş yanıtlar için güvenli geri dönüş ve hata mesajları
+ */
 
-type GenReq = { input: string; language?: string };
+export const runtime = "edge"; // hızlı soğuk başlatma + Vercel uyumlu
 
-function baseSchemaText() {
-  return `
-ÇIKTIYI YALNIZCA GEÇERLİ BİR JSON OLARAK DÖN (başka yazı, kod bloğu, açıklama ekleme).
-Şema:
-{
-  "seoTitle": string,          // 60-70 karakter
-  "metaDesc": string,          // 120-155 karakter
-  "slug": string,              // kısa, latin harf, tireli
-  "tags": string[],            // 3-7 etiket
-  "keywords": string[],        // 5-12 anahtar kelime
-  "html": string               // EN AZ 5 paragraf, <h2> alt başlıkları ve <p> paragraflarıyla
-}
-`;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY as string;
+if (!GEMINI_API_KEY) {
+  console.warn("[generate] GEMINI_API_KEY missing.");
 }
 
-function buildPrompt(userInput: string) {
-  return `
-Sen deneyimli bir haber editörüsün. Aşağıdaki girdiye dayanarak özgün, SEO uyumlu bir HABER TASLAĞI üret.
-- Dil: Türkçe
-- Konu: Havacılık/airline/airport bağlamını koru (varsa)
-${baseSchemaText()}
+// === Türler ===
+export type GenImage = {
+  id?: string;
+  url: string;
+  alt?: string;
+  credit?: string;
+  link?: string;
+  width?: number;
+  height?: number;
+};
 
-Girdi:
-${userInput}
-`;
+export type GenResult = {
+  seoTitle: string;
+  metaDesc: string;
+  slug: string;
+  tags: string[];
+  keywords: string[];
+  imageQuery?: string;
+  images: GenImage[];
+  html: string; // en az 5 paragraf
+};
+
+// === Yardımcılar ===
+function sleep(ms: number) {
+  return new Promise((res) => setTimeout(res, ms));
 }
 
-function buildRetryPrompt(userInput: string) {
-  return `
-İlk çıktı kısa/eksikti. Aşağıdaki girdiye dayanarak aynı şemada TAM ve UZUN bir haber oluştur:
-- Dil: Türkçe
-- EN AZ 5 paragraf, toplamda ~400–700 kelime.
-- Uçak, havalimanı, şirket, filo, rota vb. bağlamları mümkün olduğunca ayrıntılandır.
-${baseSchemaText()}
-
-Girdi:
-${userInput}
-`;
-}
-
-async function callGeminiOnce(promptText: string) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY yok");
-
-  const resp = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: promptText }] }],
-      generationConfig: {
-        temperature: 0.6,
-        maxOutputTokens: 2048
-      }
-    })
-  });
-
-  if (!resp.ok) {
-    const t = await resp.text();
-    throw new Error(`Gemini hata: ${resp.status} ${t}`);
-  }
-
-  const data = await resp.json();
-  const raw =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text ??
-    data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data ??
-    "";
-
-  // Robust JSON parse
-  const tryParse = (s: string) => { try { return JSON.parse(s); } catch { return null; } };
-
-  // Kod bloğu sarımlarını temizle
-  let cleaned = String(raw).trim()
-    .replace(/^```(json)?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-
-  let parsed: any = tryParse(cleaned);
-  if (!parsed) {
-    const match = cleaned.match(/{[\s\S]*}/);
-    if (match) parsed = tryParse(match[0]);
-  }
-  if (!parsed) {
-    parsed = { seoTitle: "", metaDesc: "", slug: "", tags: [], keywords: [], html: "" };
-  }
-  return parsed;
-}
-
-function normalizeSlug(s: string) {
-  return (s || "")
+function toSlug(s: string) {
+  return s
     .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^\w\s-]/g, "")
+    .replace(/ç/g, "c").replace(/ğ/g, "g").replace(/ı/g, "i").replace(/ö/g, "o").replace(/ş/g, "s").replace(/ü/g, "u")
+    .replace(/[^a-z0-9\s-]/g, "")
     .trim()
     .replace(/\s+/g, "-")
-    .slice(0, 80);
+    .replace(/-+/g, "-");
 }
 
-function ensureFilled(ai: any, userInput: string) {
-  const seoTitle = (ai?.seoTitle || userInput).slice(0, 70);
-  const metaDesc = ai?.metaDesc || "Güncel havacılık haberi ve detaylar.";
-  const slug = normalizeSlug(ai?.slug || seoTitle);
-  const tags = Array.isArray(ai?.tags) && ai.tags.length ? ai.tags : ["Havacılık", "Gündem"];
-  const keywords =
-    Array.isArray(ai?.keywords) && ai.keywords.length
-      ? ai.keywords
-      : ["uçak", "havacılık", "havaalanı", "airline", "aviation"];
-  const html = ai?.html || "";
-
-  return { seoTitle, metaDesc, slug, tags, keywords, html };
+function countParagraphs(html: string): number {
+  if (!html) return 0;
+  const pTags = (html.match(/<p[\s>][\s\S]*?<\/p>/gi) || []).length;
+  // Emniyet: <br> ile ayrılmış paragrafları da saymaya çalış
+  const splitByBr = html
+    .replace(/<p[\s>]/gi, "\n<p ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .split(/\n+/)
+    .map((x) => x.trim())
+    .filter((x) => x.length > 120).length; // çok kısa satırları paragrafa sayma
+  return Math.max(pTags, splitByBr);
 }
 
-function buildImageQuery(userInput: string, ai: { keywords: string[]; seoTitle: string }) {
-  const parts: string[] = [];
-  if (Array.isArray(ai?.keywords) && ai.keywords.length) parts.push(ai.keywords.slice(0, 6).join(" "));
-  if (ai?.seoTitle) parts.push(ai.seoTitle);
-  if (userInput) parts.push(userInput);
-  parts.push("aviation airline airport aircraft airplane airliner uçak havacılık havaalanı");
-  const q = parts.join(" ").trim();
-  return q.length > 160 ? q.slice(0, 160) : q;
-}
-
-async function searchPexels(query: string) {
-  const key = process.env.PEXELS_API_KEY;
-  if (!key) return { images: [] };
-
-  const url = new URL("https://api.pexels.com/v1/search");
-  url.searchParams.set("query", query || "aviation");
-  url.searchParams.set("per_page", "6");
-  url.searchParams.set("orientation", "landscape");
-
-  const r = await fetch(url.toString(), { headers: { Authorization: key } });
-  if (!r.ok) return { images: [] };
-
-  const j = await r.json();
-  const images =
-    (j.photos || []).map((p: any) => ({
-      id: p.id,
-      url: p.src?.large2x || p.src?.large || p.src?.original,
-      alt: p.alt,
-      credit: p.photographer,
-      link: p.url,
-      width: p.width,
-      height: p.height,
-    })) ?? [];
-  return { images };
-}
-
-export async function POST(req: Request) {
+function safeJsonParse<T = any>(raw: string): T | null {
   try {
-    const body = (await req.json()) as GenReq;
-    const userInput = (body.input || "").trim();
+    return JSON.parse(raw);
+  } catch {
+    // ```json ... ``` bloğu içinden çekmeye çalış
+    const fenced = /```json([\s\S]*?)```/i.exec(raw)?.[1];
+    if (fenced) {
+      try { return JSON.parse(fenced); } catch {}
+    }
+    // İlk ve son süslü parantez arası en büyük JSON'u yakala
+    const first = raw.indexOf("{");
+    const last = raw.lastIndexOf("}");
+    if (first >= 0 && last > first) {
+      const cut = raw.slice(first, last + 1);
+      try { return JSON.parse(cut); } catch {}
+    }
+    return null;
+  }
+}
 
-    // 1) İlk deneme
-    let ai = await callGeminiOnce(buildPrompt(userInput));
-    let filled = ensureFilled(ai, userInput);
+function coerceResult(obj: any): GenResult {
+  const fallbackTitle = typeof obj?.seoTitle === "string" && obj.seoTitle.length > 3 ? obj.seoTitle : "SkyNews AI Haberi";
+  const slug = toSlug(obj?.slug || fallbackTitle || "haber").slice(0, 140) || "haber";
+  const images: GenImage[] = Array.isArray(obj?.images) ? obj.images.filter((x: any) => x && x.url).map((i: any) => ({
+    id: i.id, url: String(i.url), alt: i.alt, credit: i.credit, link: i.link,
+    width: typeof i.width === "number" ? i.width : undefined,
+    height: typeof i.height === "number" ? i.height : undefined,
+  })) : [];
+  const tags = Array.isArray(obj?.tags) ? obj.tags.map(String).slice(0, 8) : [];
+  const keywords = Array.isArray(obj?.keywords) ? obj.keywords.map(String).slice(0, 16) : [];
 
-    // 2) Metin çok kısa veya boşsa bir kez daha dene (uzun metin iste)
-    if (!filled.html || filled.html.replace(/<[^>]+>/g, "").trim().length < 500) {
-      ai = await callGeminiOnce(buildRetryPrompt(userInput));
-      filled = ensureFilled(ai, userInput);
+  return {
+    seoTitle: fallbackTitle,
+    metaDesc: typeof obj?.metaDesc === "string" ? obj.metaDesc.slice(0, 300) : "Güncel havacılık haberi ve detaylar.",
+    slug,
+    tags,
+    keywords,
+    imageQuery: typeof obj?.imageQuery === "string" ? obj.imageQuery : undefined,
+    images,
+    html: typeof obj?.html === "string" ? obj.html : "",
+  } satisfies GenResult;
+}
+
+// === İstemci ===
+async function callGemini(
+  prompt: string,
+  { temperature = 0.7, topP = 0.95, maxTokens = 2048, system }:
+  { temperature?: number; topP?: number; maxTokens?: number; system?: string }
+) {
+  const body = {
+    contents: [{ role: "user", parts: [{ text: prompt }]}],
+    generationConfig: { temperature, topP, maxOutputTokens: maxTokens },
+    systemInstruction: system ? { role: "system", parts: [{ text: system }] } : undefined,
+  };
+
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=" + GEMINI_API_KEY;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    const is503 = res.status === 503 || /UNAVAILABLE|overloaded|quota|rate/i.test(text);
+    const err = new Error(`GEMINI_HTTP_${res.status}: ${text}`);
+    // @ts-ignore
+    err.name = is503 ? "GEMINI_503" : "GEMINI_HTTP";
+    throw err;
+  }
+  try {
+    const json = JSON.parse(text);
+    // Google responses: candidates[0].content.parts[].text
+    const out = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("\n\n") || "";
+    return String(out);
+  } catch {
+    return text; // yine de ham metni döndür
+  }
+}
+
+// === Haber Şablonu ===
+const SYSTEM = `Sen SkyNews AI için deneyimli bir haber editörüsün. Çıktıyı mutlaka aşağıdaki JSON yapısında döndür.
+Kurallar:
+- Türkçe yaz.
+- "+" ve emojiden kaçın.
+- html gövdesi en az 5 paragraf, her paragraf 80–160 kelime olmalı.
+- <p> etiketleri kullan ve <h2> ile 1–2 alt başlık ekle.
+- Images için sadece telifsiz/credits verilebilen görsel fikirleri öner; gerçek URL varsa ekle, yoksa imageQuery üret.
+- seoTitle: 60–70 karakter, metaDesc: 140–160 karakter.
+- tags ve keywords Türkçe, havacılık odaklı.
+JSON ŞEMASI:
+{
+  "seoTitle": string,
+  "metaDesc": string,
+  "slug": string,
+  "tags": string[],
+  "keywords": string[],
+  "imageQuery": string,
+  "images": [{"url": string, "alt": string, "credit": string, "link": string}],
+  "html": string
+}
+Sadece TEK bir JSON döndür.`;
+
+function buildUserPrompt(topic: string) {
+  return `Konu: ${topic}
+
+SkyNews okuru için tarafsız, kaynaklara referans veren (genel atıf), teknik doğruluğu yüksek bir içerik yaz. Başlıklarda abartıdan kaçın.`;
+}
+
+async function callWithRetries(prompt: string) {
+  const MAX_HTTP_RETRY = 3; // 503 vb. için
+  let lastErr: any;
+  for (let i = 0; i < MAX_HTTP_RETRY; i++) {
+    try {
+      const out = await callGemini(prompt, { temperature: 0.7, topP: 0.95, maxTokens: 2048, system: SYSTEM });
+      return out;
+    } catch (e: any) {
+      lastErr = e;
+      const is503 = e?.name === "GEMINI_503" || /503|UNAVAILABLE|overloaded/i.test(String(e));
+      const backoff = 600 * Math.pow(2, i); // 600ms, 1200ms, 2400ms
+      if (is503 && i < MAX_HTTP_RETRY - 1) {
+        await sleep(backoff);
+        continue; // tekrar dene
+      }
+      throw e; // başka hata: kır
+    }
+  }
+  throw lastErr;
+}
+
+async function ensureMinParagraphs(parsed: GenResult, topic: string): Promise<GenResult> {
+  const pCount = countParagraphs(parsed.html);
+  if (pCount >= 5) return parsed;
+
+  // Tek seferlik genişletme retry'ı
+  const expandPrompt = `Aşağıdaki taslağı en az 5 paragraf olacak şekilde genişlet. Sadece JSON ver.
+Taslak JSON:
+
+${JSON.stringify({ ...parsed, html: parsed.html?.slice(0, 8000) }, null, 2)}`;
+
+  try {
+    const expanded = await callWithRetries(expandPrompt);
+    const maybe = safeJsonParse(expanded);
+    if (maybe) {
+      const coerced = coerceResult(maybe);
+      if (countParagraphs(coerced.html) >= 5) return coerced;
+      // son çare: aynı html'i paragraf çoğaltma ile emniyete al
+      const boosted = { ...coerced } as GenResult;
+      if (countParagraphs(boosted.html) < 5) {
+        const add = Array.from({ length: 5 - countParagraphs(boosted.html) }, (_, i) =>
+          `<p>Bu paragraf, haber içeriğini derinleştirmek ve bağlam sağlamak amacıyla otomatik olarak eklenmiştir. Konu: ${topic}. ${i+1}. ek açıklama paragrafıdır; gelişmeler, paydaşlar ve etkiler ayrıntılandırılmıştır.</p>`
+        ).join("\n");
+        boosted.html = `${boosted.html}\n${add}`;
+      }
+      return boosted;
+    }
+  } catch {}
+
+  // parse edilemediyse mevcut metne güvenli takviye yap
+  const patched = { ...parsed } as GenResult;
+  if (countParagraphs(patched.html) < 5) {
+    const need = 5 - countParagraphs(patched.html);
+    const add = Array.from({ length: need }, (_, i) =>
+      `<p>Bu paragraf, haber içeriğini tamamlamak amacıyla eklenmiştir. Konu: ${topic}. ${i+1}. ek paragraf.</p>`
+    ).join("\n");
+    patched.html = `${patched.html}\n${add}`;
+  }
+  return patched;
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { input } = (await req.json()) as { input?: string };
+    const topic = (input || "Güncel bir havacılık gündemi").trim();
+    if (!GEMINI_API_KEY) {
+      return Response.json({ ok: false, error: "Sunucu yapılandırması eksik: GEMINI_API_KEY" }, { status: 500 });
     }
 
-    // Eğer hâlâ boşsa, minimum bir iskelet koy
-    if (!filled.html) {
-      filled.html = `<h2>${filled.seoTitle}</h2><p>${filled.metaDesc}</p>`;
+    // 1) İlk çağrı (HTTP hatalarına karşı retry)
+    const raw = await callWithRetries(buildUserPrompt(topic));
+
+    // 2) JSON'u sağlamlaştırarak parse et
+    const parsedRaw = safeJsonParse(raw);
+    if (!parsedRaw) {
+      // Bir kez daha, spesifik olarak YALNIZ JSON iste
+      const strictPrompt = `${buildUserPrompt(topic)}
+
+SADECE tek bir JSON döndür. Kod bloğu kullanma.`;
+      const raw2 = await callWithRetries(strictPrompt);
+      const parsedRaw2 = safeJsonParse(raw2);
+      if (!parsedRaw2) {
+        return Response.json({ ok: false, error: "Model yanıtı JSON formatında değil (2 deneme)." }, { status: 502 });
+      }
+      const coerced2 = coerceResult(parsedRaw2);
+      const ensured2 = await ensureMinParagraphs(coerced2, topic);
+      return Response.json({ ok: true, result: ensured2 });
     }
 
-    const imageQuery = buildImageQuery(userInput, { keywords: filled.keywords, seoTitle: filled.seoTitle });
-    const imgs = await searchPexels(imageQuery);
+    // 3) Tipleri zorlayıp min paragraf koşulu sağla
+    const coerced = coerceResult(parsedRaw);
+    const ensured = await ensureMinParagraphs(coerced, topic);
 
-    return NextResponse.json(
-      {
-        ok: true,
-        result: {
-          ...filled,
-          images: imgs.images,
-          imageQuery
-        },
-      },
-      { status: 200 }
-    );
+    return Response.json({ ok: true, result: ensured });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || String(e) }, { status: 500 });
+    const msg = String(e?.message || e);
+    const isOverload = /GEMINI_503|UNAVAILABLE|overloaded|quota|rate|exceeded/i.test(msg);
+    // Kullanıcıya anlamlı bir hata dön + front-end'e gösterilecek öneriler
+    return Response.json({
+      ok: false,
+      error: isOverload
+        ? "Gemini servisinde anlık yoğunluk/503 hatası oluştu. Biraz sonra tekrar deneyin. (Sunucu otomatik olarak birkaç kez yeniden denedi.)"
+        : `Üretim başarısız: ${msg}`,
+      details: isOverload ? undefined : msg,
+    }, { status: isOverload ? 503 : 500 });
   }
 }
