@@ -1,8 +1,9 @@
 // app/api/generate/dry-run/route.ts
 import { NextResponse } from "next/server";
 
-const GEMINI_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent";
+- const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent";
++ const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
+// İstersen pro seviyesi: gemini-2.5-pro
 
 type GenReq = {
   input: string;     // kullanıcıdan gelen başlık/özet/link
