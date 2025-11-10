@@ -47,7 +47,8 @@ async function callGemini(content: string) {
       contents: [{ parts: [{ text: content }] }],
       generationConfig: {
         temperature: 0.6,
-        maxOutputTokens: 1200,
+        maxOutputTokens: 1200
+        // responseMimeType: "application/json"  // (bazı modellerde desteklenmediği için çıkarıldı)
       },
     }),
   });
@@ -58,21 +59,46 @@ async function callGemini(content: string) {
   }
 
   const data = await resp.json();
-  const text =
+  const raw =
     data?.candidates?.[0]?.content?.parts?.[0]?.text ??
     data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data ??
     "";
 
-  const cleaned = String(text).trim();
-  let parsed: any;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    const unwrapped = cleaned
-      .replace(/^```(json)?/i, "")
-      .replace(/```$/i, "")
-      .trim();
-    parsed = JSON.parse(unwrapped);
+  // --- SAĞLAMLAŞTIRILMIŞ PARSE ---
+  const tryParse = (s: string) => {
+    try {
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
+  };
+
+  // 1) Kod bloğu işaretlerini temizle
+  let cleaned = String(raw).trim()
+    .replace(/^```(json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  // 2) Direkt parse dene
+  let parsed = tryParse(cleaned);
+
+  // 3) Olmadıysa, ilk { ile son } arasını al ve parse et
+  if (!parsed) {
+    const match = cleaned.match(/{[\s\S]*}/);
+    if (match) parsed = tryParse(match[0]);
+  }
+
+  // 4) Hâlâ yoksa, ham metni html olarak sarmala (fallback)
+  if (!parsed) {
+    parsed = {
+      seoTitle: "",
+      metaDesc: "",
+      slug: "",
+      tags: [],
+      keywords: [],
+      html: cleaned || String(raw) || "",
+      __debugRaw: String(raw).slice(0, 2000) // debug amaçlı
+    };
   }
 
   return parsed;
@@ -127,6 +153,7 @@ export async function POST(req: Request) {
 
     const ai = await callGemini(prompt);
 
+    // Boş alanlar için makul fallback
     const seoTitle = ai?.seoTitle || userInput.slice(0, 70);
     const metaDesc = ai?.metaDesc || "Güncel havacılık haberi ve detaylar.";
     const slug =
@@ -160,6 +187,7 @@ export async function POST(req: Request) {
           keywords,
           images: imgs.images,
           imageQuery,
+          debugRaw: ai?.__debugRaw || undefined
         },
       },
       { status: 200 }
