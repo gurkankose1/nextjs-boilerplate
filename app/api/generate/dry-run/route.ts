@@ -5,12 +5,11 @@ const GEMINI_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
 
 type GenReq = {
-  input: string;     // kullanıcıdan gelen başlık/özet/link
-  language?: string; // varsayılan "tr"
+  input: string;
+  language?: string;
 };
 
 function buildPrompt(userInput: string) {
-  // Modeli net yönlendirelim: sadece JSON dönsün
   return `
 Sen deneyimli bir haber editörüsün. Aşağıdaki girdiye dayanarak SEO uyumlu, özgün bir HABER TASLAĞI üret.
 
@@ -19,12 +18,12 @@ Kurallar (önemli):
 - ÇIKTIYI YALNIZCA GEÇERLİ BİR JSON OLARAK DÖN (başka yazı, açıklama veya kod bloğu koyma).
 - Şema:
 {
-  "seoTitle": string,          // 60-70 karakter
-  "metaDesc": string,          // 120-155 karakter
-  "slug": string,              // kısa, latin harf, tireli
-  "tags": string[],            // 3-7 etiket
-  "keywords": string[],        // 5-12 anahtar kelime
-  "html": string               // <h2> ve <p> ile bölümlenmiş, kaynak belirtme yok
+  "seoTitle": string,
+  "metaDesc": string,
+  "slug": string,
+  "tags": string[],
+  "keywords": string[],
+  "html": string
 }
 
 İpuçları:
@@ -37,21 +36,6 @@ ${userInput}
 `;
 }
 
-function buildImageQuery(userInput: string, ai: any) {
-  // Daha alakalı results için: AI keywords + seoTitle + kullanıcı girdisi + havacılık odağı
-  const parts: string[] = [];
-  if (Array.isArray(ai?.keywords) && ai.keywords.length) parts.push(ai.keywords.slice(0, 6).join(" "));
-  if (ai?.seoTitle) parts.push(ai.seoTitle);
-  if (userInput) parts.push(userInput);
-
-  // Havacılık bağlamını kuvvetlendir (senin sitenin temasına uygun)
-  parts.push("aviation airline airport aircraft airplane airliner uçak havacılık havaalanı");
-
-  const q = parts.join(" ").trim();
-  // Pexels daha kısa/temiz sorguları sever; 120-150 karakter civarı idealdir.
-  return q.length > 160 ? q.slice(0, 160) : q;
-}
-
 async function callGemini(content: string) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY yok");
@@ -59,14 +43,14 @@ async function callGemini(content: string) {
   const resp = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body = JSON.stringify({
-  contents: [{ parts: [{ text: content }] }],
-  generationConfig: {
-    temperature: 0.6,
-    maxOutputTokens: 1200,
-    responseMimeType: "application/json", // <— DÜZELTİLMİŞ
-  },
-});
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: content }] }],
+      generationConfig: {
+        temperature: 0.6,
+        maxOutputTokens: 1200,
+        responseMimeType: "application/json", // DÜZELTİLMİŞ anahtar
+      },
+    }),
   });
 
   if (!resp.ok) {
@@ -85,7 +69,6 @@ async function callGemini(content: string) {
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    // Bazı modeller yine de '```json' ile sarabiliyor; onları da sökelim
     const unwrapped = cleaned
       .replace(/^```(json)?/i, "")
       .replace(/```$/i, "")
@@ -96,6 +79,17 @@ async function callGemini(content: string) {
   return parsed;
 }
 
+function buildImageQuery(userInput: string, ai: any) {
+  const parts: string[] = [];
+  if (Array.isArray(ai?.keywords) && ai.keywords.length)
+    parts.push(ai.keywords.slice(0, 6).join(" "));
+  if (ai?.seoTitle) parts.push(ai.seoTitle);
+  if (userInput) parts.push(userInput);
+  parts.push("aviation airline airport aircraft airplane airliner uçak havacılık havaalanı");
+  const q = parts.join(" ").trim();
+  return q.length > 160 ? q.slice(0, 160) : q;
+}
+
 async function searchPexels(query: string) {
   const key = process.env.PEXELS_API_KEY;
   if (!key) return { images: [] };
@@ -104,15 +98,13 @@ async function searchPexels(query: string) {
   url.searchParams.set("query", query || "aviation");
   url.searchParams.set("per_page", "6");
   url.searchParams.set("orientation", "landscape");
-  // Not: Pexels'te “safe” param yok, ama sorguyu temayla (aviation) sınırlıyoruz.
 
   const r = await fetch(url.toString(), {
     headers: { Authorization: key },
   });
 
-  if (!r.ok) {
-    return { images: [] };
-  }
+  if (!r.ok) return { images: [] };
+
   const j = await r.json();
   const images =
     (j.photos || []).map((p: any) => ({
@@ -136,7 +128,6 @@ export async function POST(req: Request) {
 
     const ai = await callGemini(prompt);
 
-    // Boş alanlar olursa makul fallback'ler:
     const seoTitle = ai?.seoTitle || userInput.slice(0, 70);
     const metaDesc = ai?.metaDesc || "Güncel havacılık haberi ve detaylar.";
     const slug =
@@ -153,10 +144,8 @@ export async function POST(req: Request) {
       Array.isArray(ai?.keywords) && ai.keywords.length
         ? ai.keywords
         : ["uçak", "havacılık", "havaalanı", "airline", "aviation"];
-
     const html = ai?.html || `<h2>${seoTitle}</h2><p>${metaDesc}</p>`;
 
-    // Görsel araması (daha alakalı)
     const imageQuery = buildImageQuery(userInput, { keywords, seoTitle });
     const imgs = await searchPexels(imageQuery);
 
@@ -171,7 +160,7 @@ export async function POST(req: Request) {
           html,
           keywords,
           images: imgs.images,
-          imageQuery, // debug amaçlı, UI'da gösterebilirsin
+          imageQuery,
         },
       },
       { status: 200 }
