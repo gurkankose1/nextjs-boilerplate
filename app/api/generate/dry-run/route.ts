@@ -1,13 +1,13 @@
 // app/api/generate/dry-run/route.ts
 import { NextResponse } from "next/server";
 
-- const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent";
-+ const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
-// İstersen pro seviyesi: gemini-2.5-pro
+const GEMINI_ENDPOINT =
+  "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
+// İstersen "gemini-2.5-pro" da kullanabilirsin.
 
 type GenReq = {
-  input: string;     // kullanıcıdan gelen başlık/özet/link
-  language?: string; // "tr" varsayılacak
+  input: string;
+  language?: string;
 };
 
 function buildPrompt(userInput: string) {
@@ -34,13 +34,9 @@ async function callGemini(content: string) {
   const resp = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // Basit text prompt; output'ta JSON bekliyoruz
     body: JSON.stringify({
       contents: [{ parts: [{ text: content }] }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1024,
-      },
+      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
     }),
   });
 
@@ -50,24 +46,20 @@ async function callGemini(content: string) {
   }
 
   const data = await resp.json();
-  // Cevap genelde data.candidates[0].content.parts[0].text içinde
   const text =
     data?.candidates?.[0]?.content?.parts?.[0]?.text ??
     JSON.stringify(data);
 
-  // Kod blokları/formatları temizle
-  const cleaned = text.replace(/^```(json)?/i, "").replace(/```$/i, "").trim();
+  const cleaned = text
+    .replace(/^```(json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
 
-  // JSON parse dene
-  let parsed: any;
   try {
-    parsed = JSON.parse(cleaned);
+    return JSON.parse(cleaned);
   } catch {
-    // Parse edilemezse sarmala
-    parsed = { html: cleaned };
+    return { html: cleaned };
   }
-
-  return parsed;
 }
 
 async function searchPexels(query: string) {
@@ -81,12 +73,10 @@ async function searchPexels(query: string) {
 
   const r = await fetch(url.toString(), {
     headers: { Authorization: key },
-    // fetch cache default ok
   });
 
-  if (!r.ok) {
-    return { images: [] };
-  }
+  if (!r.ok) return { images: [] };
+
   const j = await r.json();
   const images =
     (j.photos || []).map((p: any) => ({
@@ -110,7 +100,6 @@ export async function POST(req: Request) {
 
     const ai = await callGemini(prompt);
 
-    // Görsel aramasını seoTitle + keywords üzerinden yap
     const q =
       ai?.seoTitle ||
       (Array.isArray(ai?.keywords) ? ai.keywords.join(" ") : userInput) ||
