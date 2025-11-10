@@ -59,15 +59,14 @@ async function callGemini(content: string) {
   const resp = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: content }] }],
-      generationConfig: {
-        temperature: 0.6,
-        maxOutputTokens: 1200,
-        // v1'de yanıtı JSON'a zorlamak için:
-        response_mime_type: "application/json",
-      },
-    }),
+    body = JSON.stringify({
+  contents: [{ parts: [{ text: content }] }],
+  generationConfig: {
+    temperature: 0.6,
+    maxOutputTokens: 1200,
+    responseMimeType: "application/json", // <— DÜZELTİLMİŞ
+  },
+});
   });
 
   if (!resp.ok) {
