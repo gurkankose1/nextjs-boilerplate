@@ -1,65 +1,233 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+import { useEffect, useState } from "react";
+import { auth, googleProvider } from "../../lib/firebaseClient";
+import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
+
+type AllowResp = { ok: boolean; error?: string };
+type GenImage = { id?: string; url: string; alt?: string; credit?: string; link?: string; width?: number; height?: number };
+type GenResult = {
+  seoTitle: string;
+  metaDesc: string;
+  slug: string;
+  tags: string[];
+  html: string;
+  keywords: string[];
+  images: GenImage[];
+  imageQuery?: string;
+};
+
+export default function StudioPage() {
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  // form/dry-run state
+  const [input, setInput] = useState("");
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<GenResult | null>(null);
+
+  // save draft state
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setErr(null);
+      setAllowed(null);
+      setResult(null);
+      setSavedId(null);
+      if (!u) {
+        setUserEmail(null);
+        setLoading(false);
+        return;
+      }
+      const email = u.email || null;
+      setUserEmail(email);
+      if (!email) {
+        setAllowed(false);
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch("/api/allowlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const data = (await res.json()) as AllowResp;
+        setAllowed(data.ok);
+      } catch (e: any) {
+        setErr(String(e?.message || e));
+        setAllowed(false);
+      } finally {
+        setLoading(false);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const login = async () => {
+    setErr(null);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    }
+  };
+
+  const logout = async () => {
+    await signOut(auth);
+    setAllowed(null);
+    setUserEmail(null);
+  };
+
+  const generate = async () => {
+    setErr(null);
+    setResult(null);
+    setSavedId(null);
+    setRunning(true);
+    try {
+      const res = await fetch("/api/generate/dry-run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input }),
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || "Generate failed");
+      setResult(j.result as GenResult);
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    if (!result) return;
+    setErr(null);
+    setSaving(true);
+    setSavedId(null);
+    try {
+      const res = await fetch("/api/drafts/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actor: userEmail,
+          draft: result, // seoTitle, metaDesc, slug, html, images...
+        }),
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || "Save failed");
+      setSavedId(j.id as string);
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <main style={{ padding: 24 }}>Yükleniyor…</main>;
+
+  if (!userEmail) {
+    return (
+      <main style={{ padding: 24 }}>
+        <h1>/studio</h1>
+        <p>Giriş yapman gerekiyor.</p>
+        <button onClick={login} style={{ padding: 8, border: "1px solid #ccc" }}>
+          Google ile Giriş
+        </button>
+        {err && <p style={{ color: "crimson" }}>{err}</p>}
       </main>
-    </div>
+    );
+  }
+
+  if (allowed === false) {
+    return (
+      <main style={{ padding: 24 }}>
+        <p>
+          <strong>{userEmail}</strong> yetkili listesinde değil.
+        </p>
+        <button onClick={logout} style={{ padding: 8, border: "1px solid #ccc" }}>
+          Çıkış
+        </button>
+        {err && <p style={{ color: "crimson" }}>{err}</p>}
+      </main>
+    );
+  }
+
+  // allowed === true
+  return (
+    <main style={{ padding: 24, display: "grid", gap: 16 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <h1>/studio</h1>
+        <span style={{ fontSize: 14, color: "#666" }}>{userEmail}</span>
+        <button onClick={logout} style={{ marginLeft: "auto", padding: 8, border: "1px solid #ccc" }}>
+          Çıkış
+        </button>
+      </div>
+
+      <section style={{ display: "grid", gap: 8 }}>
+        <label>
+          <strong>Kaynak başlığı / linki / kısa özet</strong>
+        </label>
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Örn: 'THY, filoya 20 yeni uçak eklemeyi planlıyor...' vb."
+          rows={5}
+          style={{ width: "100%", padding: 8, border: "1px solid #ccc" }}
+        />
+        <button onClick={generate} disabled={running || !input.trim()} style={{ padding: 10, border: "1px solid #333" }}>
+          {running ? "Üretiyor..." : "Generate News (dry-run)"}
+        </button>
+        {err && <p style={{ color: "crimson" }}>{err}</p>}
+      </section>
+
+      {result && (
+        <section style={{ display: "grid", gap: 12 }}>
+          <h2>Önizleme</h2>
+          <div style={{ display: "grid", gap: 4 }}>
+            <div><strong>SEO Title:</strong> {result.seoTitle}</div>
+            <div><strong>Meta Description:</strong> {result.metaDesc}</div>
+            <div><strong>Slug:</strong> {result.slug}</div>
+            <div><strong>Etiketler:</strong> {result.tags?.join(", ")}</div>
+            <div><strong>Anahtar Kelimeler:</strong> {result.keywords?.join(", ")}</div>
+          </div>
+
+          <div>
+            <strong>Gövde (HTML):</strong>
+            <div
+              style={{ border: "1px solid #eee", padding: 12, marginTop: 6 }}
+              dangerouslySetInnerHTML={{ __html: result.html || "<p>(boş)</p>" }}
+            />
+          </div>
+
+          {Array.isArray(result.images) && result.images.length > 0 && (
+            <div style={{ display: "grid", gap: 8 }}>
+              <strong>Görsel Adayları (Pexels):</strong>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
+                {result.images.map((img, idx) => (
+                  <a key={img.id || idx} href={img.link || img.url} target="_blank" style={{ border: "1px solid #eee", padding: 6 }}>
+                    <img src={img.url} alt={img.alt || ""} style={{ width: "100%", height: 140, objectFit: "cover" }} />
+                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                      Fotoğraf: {img.credit || "Pexels"}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button onClick={saveDraft} disabled={saving} style={{ padding: 10, border: "1px solid #28a745" }}>
+              {saving ? "Kaydediyor..." : "Save Draft"}
+            </button>
+            {savedId && <span style={{ color: "#28a745" }}>Kaydedildi ✓ (id: {savedId})</span>}
+          </div>
+        </section>
+      )}
+    </main>
   );
 }
