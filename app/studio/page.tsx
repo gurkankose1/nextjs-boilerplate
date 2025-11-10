@@ -5,7 +5,7 @@ import { auth, googleProvider } from "../../lib/firebaseClient";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 
 type AllowResp = { ok: boolean; error?: string };
-type GenImage = { id: string; url: string; alt?: string; credit?: string; link?: string; width?: number; height?: number };
+type GenImage = { id?: string; url: string; alt?: string; credit?: string; link?: string; width?: number; height?: number };
 type GenResult = {
   seoTitle: string;
   metaDesc: string;
@@ -14,6 +14,7 @@ type GenResult = {
   html: string;
   keywords: string[];
   images: GenImage[];
+  imageQuery?: string;
 };
 
 export default function StudioPage() {
@@ -27,11 +28,16 @@ export default function StudioPage() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<GenResult | null>(null);
 
+  // save draft state
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setErr(null);
       setAllowed(null);
       setResult(null);
+      setSavedId(null);
       if (!u) {
         setUserEmail(null);
         setLoading(false);
@@ -80,6 +86,7 @@ export default function StudioPage() {
   const generate = async () => {
     setErr(null);
     setResult(null);
+    setSavedId(null);
     setRunning(true);
     try {
       const res = await fetch("/api/generate/dry-run", {
@@ -94,6 +101,30 @@ export default function StudioPage() {
       setErr(String(e?.message || e));
     } finally {
       setRunning(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    if (!result) return;
+    setErr(null);
+    setSaving(true);
+    setSavedId(null);
+    try {
+      const res = await fetch("/api/drafts/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actor: userEmail,
+          draft: result,
+        }),
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error || "Save failed");
+      setSavedId(j.id as string);
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -126,7 +157,6 @@ export default function StudioPage() {
     );
   }
 
-  // allowed === true
   return (
     <main style={{ padding: 24, display: "grid", gap: 16 }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -137,6 +167,22 @@ export default function StudioPage() {
         </button>
       </div>
 
+      {/* --- ÜSTTE GÖRÜNÜR BUTONLAR --- */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button onClick={generate} disabled={running || !input.trim()} style={{ padding: 10, border: "1px solid #333" }}>
+          {running ? "Üretiyor..." : "Generate News (dry-run)"}
+        </button>
+        <button
+          onClick={saveDraft}
+          disabled={!result || saving}
+          style={{ padding: 10, border: "1px solid #28a745", opacity: !result ? 0.5 : 1 }}
+          title={!result ? "Önce Generate yap" : "Taslağı kaydet"}
+        >
+          {saving ? "Kaydediyor..." : "Save Draft"}
+        </button>
+        {savedId && <span style={{ color: "#28a745" }}>Kaydedildi ✓ (id: {savedId})</span>}
+      </div>
+
       <section style={{ display: "grid", gap: 8 }}>
         <label>
           <strong>Kaynak başlığı / linki / kısa özet</strong>
@@ -144,13 +190,10 @@ export default function StudioPage() {
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Örn: 'THY, 2026 filoya 20 yeni uçak eklemeyi planlıyor' vb."
+          placeholder="Örn: 'THY, filoya 20 yeni uçak eklemeyi planlıyor...' vb."
           rows={5}
           style={{ width: "100%", padding: 8, border: "1px solid #ccc" }}
         />
-        <button onClick={generate} disabled={running || !input.trim()} style={{ padding: 10, border: "1px solid #333" }}>
-          {running ? "Üretiyor..." : "Generate News (dry-run)"}
-        </button>
         {err && <p style={{ color: "crimson" }}>{err}</p>}
       </section>
 
@@ -177,8 +220,8 @@ export default function StudioPage() {
             <div style={{ display: "grid", gap: 8 }}>
               <strong>Görsel Adayları (Pexels):</strong>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
-                {result.images.map((img) => (
-                  <a key={img.id} href={img.link || img.url} target="_blank" style={{ border: "1px solid #eee", padding: 6 }}>
+                {result.images.map((img, idx) => (
+                  <a key={img.id || idx} href={img.link || img.url} target="_blank" style={{ border: "1px solid #eee", padding: 6 }}>
                     <img src={img.url} alt={img.alt || ""} style={{ width: "100%", height: 140, objectFit: "cover" }} />
                     <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
                       Fotoğraf: {img.credit || "Pexels"}
@@ -193,3 +236,4 @@ export default function StudioPage() {
     </main>
   );
 }
+v
