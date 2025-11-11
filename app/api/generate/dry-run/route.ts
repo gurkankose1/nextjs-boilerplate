@@ -4,20 +4,22 @@ import type { NextRequest } from "next/server";
 // ——— Katı zaman bütçesi (Edge) ———
 // Edge fonksiyonlar 5–10 sn aralığında timeout’a düşebilir.
 // Burada toplamı 8000ms ile sınırlıyoruz.
-const TOTAL_DEADLINE_MS = 8000;
+const TOTAL_DEADLINE_MS = 9500;
 
 // ——— Model ve retry ayarları ———
-const FETCH_TIMEOUT_MS = 5000;                 // tek model çağrısı en fazla 5sn
+const FETCH_TIMEOUT_MS = 8000;                 // tek model çağrısı en fazla 5sn
 const MAX_TOKENS = 1536;                       // biraz kısalttık (daha hızlı)
 const MODEL_CANDIDATES = ["gemini-2.5-flash", "gemini-2.0-flash"];
-const MAX_HTTP_RETRY = 2;                      // en fazla 2 deneme
+const MAX_HTTP_RETRY = 1;                      // en fazla 2 deneme
 const BACKOFF_BASE_MS = 300;                   // 300ms → ~600ms (jitter eklenecek)
 
 // ——— Görsel çağrıları için mikro zaman sınırı ———
 const IMAGE_PROVIDER_BUDGET_MS = 1100;         // sağlayıcı başına ~1.1sn
 const IMAGE_TOTAL_BUDGET_MS = 2200;            // tüm görsellere toplam ~2.2sn
 
-export const runtime = "edge";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic"; // ISR/SSG’a kilitlenmesin
+
 
 // ——— Env ———
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY as string;
