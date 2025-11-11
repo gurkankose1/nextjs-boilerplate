@@ -83,26 +83,36 @@ export default function StudioPage() {
     setUserEmail(null);
   };
 
-  const generate = async () => {
-    setErr(null);
-    setResult(null);
-    setSavedId(null);
-    setRunning(true);
+ const generate = async () => {
+  setErr(null);
+  setResult(null);
+  setSavedId(null);
+  setRunning(true);
+  try {
+    const res = await fetch("/api/generate/dry-run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input }),
+    });
+
+    // ---- güvenli parse ----
+    const raw = await res.text();      // 1) önce ham metni al
+    let j: any;
     try {
-      const res = await fetch("/api/generate/dry-run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input }),
-      });
-      const j = await res.json();
-      if (!j.ok) throw new Error(j.error || "Generate failed");
-      setResult(j.result as GenResult);
-    } catch (e: any) {
-      setErr(String(e?.message || e));
-    } finally {
-      setRunning(false);
+      j = JSON.parse(raw);             // 2) JSON'a çevirmeyi dene
+    } catch {
+      // 3) JSON değilse ham metni ekrana hatayla göster
+      throw new Error("API raw: " + raw.slice(0, 500));
     }
-  };
+    if (!j.ok) throw new Error(j.error || "Üretim başarısız");
+
+    setResult(j.result as GenResult);
+  } catch (e: any) {
+    setErr(String(e?.message || e));
+  } finally {
+    setRunning(false);
+  }
+};
 
   const saveDraft = async () => {
     if (!result) return;
