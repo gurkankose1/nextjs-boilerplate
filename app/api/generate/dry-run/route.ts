@@ -1,22 +1,28 @@
 // app/api/generate/dry-run/route.ts
 import type { NextRequest } from "next/server";
 
-// ——— Model ve zaman ayarları ———
-const FETCH_TIMEOUT_MS = 9000;
-const MAX_TOKENS = 2048;
+// ——— Katı zaman bütçesi (Edge) ———
+// Edge fonksiyonlar 5–10 sn aralığında timeout’a düşebilir.
+// Burada toplamı 8000ms ile sınırlıyoruz.
+const TOTAL_DEADLINE_MS = 8000;
+
+// ——— Model ve retry ayarları ———
+const FETCH_TIMEOUT_MS = 5000;                 // tek model çağrısı en fazla 5sn
+const MAX_TOKENS = 1536;                       // biraz kısalttık (daha hızlı)
 const MODEL_CANDIDATES = ["gemini-2.5-flash", "gemini-2.0-flash"];
+const MAX_HTTP_RETRY = 2;                      // en fazla 2 deneme
+const BACKOFF_BASE_MS = 300;                   // 300ms → ~600ms (jitter eklenecek)
+
+// ——— Görsel çağrıları için mikro zaman sınırı ———
+const IMAGE_PROVIDER_BUDGET_MS = 1100;         // sağlayıcı başına ~1.1sn
+const IMAGE_TOTAL_BUDGET_MS = 2200;            // tüm görsellere toplam ~2.2sn
 
 export const runtime = "edge";
-
-// Retry/backoff ayarları
-const MAX_HTTP_RETRY = 3;       // toplam 3 deneme
-const BACKOFF_BASE_MS = 400;    // 400ms → 800ms → 1600ms (jitter ile)
-
 
 // ——— Env ———
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY as string;
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY as string | undefined;
-const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY as string | undefined; // opsiyonel
+const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY as string | undefined;
 
 // ==== Türler ====
 export type GenImage = {
@@ -27,7 +33,7 @@ export type GenImage = {
   link?: string;
   width?: number;
   height?: number;
-  license?: string;   // ⇐ eklendi (CC BY-SA, Unsplash License, vb.)
+  license?: string;
 };
 export type GenResult = {
   seoTitle: string; metaDesc: string; slug: string; tags: string[];
@@ -35,6 +41,7 @@ export type GenResult = {
 };
 
 // ==== Yardımcılar ====
+function now() { return Date.now(); }
 function toSlug(s: string) {
   return s.toLowerCase()
     .replace(/ç/g,"c").replace(/ğ/g,"g").replace(/ı/g,"i").replace(/ö/g,"o").replace(/ş/g,"s").replace(/ü/g,"u")
@@ -46,12 +53,27 @@ function sleep(ms: number) {
 function isTransientErr(msg: string) {
   return /\b(503|UNAVAILABLE|timeout|aborted|overloaded|rate|quota|exceeded)\b/i.test(msg);
 }
+function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Promise<T> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  // @ts-ignore — fetch’te kullanmadığımızda da birliktelik bozulmasın
+  return Promise.race([
+    p.finally(() => clearTimeout(t)),
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error(label)), ms))
+  ]) as Promise<T>;
+}
+function remaining(deadline: number) {
+  return Math.max(0, deadline - now());
+}
+function hardStopIfExpired(deadline: number) {
+  if (remaining(deadline) <= 0) throw new Error("BUDGET_EXCEEDED");
+}
 
 function isValidHttpUrl(u?: string) {
   if (!u) return false;
   try {
     const x = new URL(u);
-    return (x.protocol === "http:" || x.protocol === "https:") && !/example\.com/i.test(x.hostname);
+    return (x.protocol === "http:" || x.protocol === "https:");
   } catch { return false; }
 }
 function sanitizeImages(arr: any[]): GenImage[] {
@@ -69,6 +91,7 @@ function sanitizeImages(arr: any[]): GenImage[] {
   .filter(i => isValidHttpUrl(i.url))
   .slice(0, 8);
 }
+
 function stripTags(html: string): string {
   return String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -160,7 +183,7 @@ function coerceResult(obj: any): GenResult {
   };
 }
 
-// —— Sistem yönergesi ——
+// —— Sistem yönergesi —— 
 const SYSTEM = `Sen SkyNews AI için deneyimli bir haber editörüsün. Çıktıyı mutlaka aşağıdaki JSON yapısında döndür.
 Kurallar:
 - Türkçe yaz; “AI” üslubundan kaçın.
@@ -183,6 +206,7 @@ JSON ŞEMASI:
 }
 Sadece TEK bir JSON döndür.`;
 
+// —— Prompt kurucu ——
 function buildUserPrompt(topic: string) {
   return `${SYSTEM}
 
@@ -191,20 +215,50 @@ Konu: ${topic}
 SkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa ve uzun cümleleri dengeli kullan.`;
 }
 
-// — Tek çağrıyı retry/backoff ile sarmalayan üst seviye yardımcı —
+// —— Model çağrısı (fallback + mini-timeout + retry) ——
+async function callGeminiOnceWithFallback(prompt: string) {
+  let lastErr: any;
+  for (const model of MODEL_CANDIDATES) {
+    const body = {
+      contents: [{ role: "user", parts: [{ text: prompt }]}],
+      generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: MAX_TOKENS }
+    };
+    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const text = await res.text();
+    if (res.status === 404) { lastErr = new Error(`HTTP 404 for model ${model}: ${text}`); continue; }
+    if (!res.ok) { throw new Error(`HTTP ${res.status} ${res.statusText} :: ${text}`); }
+
+    try {
+      const json = JSON.parse(text);
+      const out = json?.candidates?.[0]?.content?.parts?.map((p:any)=>p?.text).filter(Boolean).join("\n\n") || "";
+      return String(out);
+    } catch { return text; }
+  }
+  throw lastErr || new Error("No usable model found");
+}
+
+// — tek çağrıyı retry/backoff ile sarmala —
 async function callGeminiWithRetry(prompt: string) {
   let lastErr: any;
   for (let i = 0; i < MAX_HTTP_RETRY; i++) {
     try {
-      // model fallback’lı tek çağrı
       return await callGeminiOnceWithFallback(prompt);
     } catch (e: any) {
       lastErr = e;
       const msg = String(e?.message || e);
-      // sadece geçici hatalarda bekleyip tekrar dene
       if (isTransientErr(msg) && i < MAX_HTTP_RETRY - 1) {
-        const jitter = Math.floor(Math.random() * 250);
-        const wait = BACKOFF_BASE_MS * Math.pow(2, i) + jitter; // 400, ~800, ~1600ms
+        const jitter = Math.floor(Math.random() * 200);
+        const wait = BACKOFF_BASE_MS * Math.pow(2, i) + jitter; // ~300, ~600ms
         await sleep(wait);
         continue;
       }
@@ -214,12 +268,10 @@ async function callGeminiWithRetry(prompt: string) {
   throw lastErr || new Error("Unknown error");
 }
 
-
-// —— Entity tespiti (marka/tesis/konum) ——
+// —— Entity / görsel sorgu ipuçları ——
 type EntityHints = { entity?: string; aliases: string[]; commonsQueries: string[]; stockQueries: string[]; };
 function detectEntityHints(topic: string): EntityHints {
   const t = topic.toLowerCase();
-  // TEC / THY / Pratt & Whitney / SAW gibi yaygın örnekler
   if (/turkish engine center|tec\b/.test(t)) {
     return {
       entity: "Turkish Engine Center",
@@ -252,7 +304,6 @@ function detectEntityHints(topic: string): EntityHints {
       stockQueries: ["airport terminal interior", "airport apron night", "aircraft taxiing"]
     };
   }
-  // varsayılan
   return {
     aliases: [],
     commonsQueries: [],
@@ -260,104 +311,119 @@ function detectEntityHints(topic: string): EntityHints {
   };
 }
 
-// —— Wikimedia Commons (lisanslı) — TS-safe sürüm ——
-async function searchCommons(queries: string[], limit = 6): Promise<GenImage[]> {
+// —— Wikimedia Commons (lisanslı) — TS-safe & time-bounded ——
+async function searchCommons(queries: string[], limit: number, deadline: number): Promise<GenImage[]> {
   const results: GenImage[] = [];
-
   for (const q of queries) {
+    hardStopIfExpired(deadline);
+    const perCallBudget = Math.min(IMAGE_PROVIDER_BUDGET_MS, remaining(deadline));
+    if (perCallBudget <= 0) break;
+
     const url =
       `https://commons.wikimedia.org/w/api.php` +
       `?action=query&generator=search&gsrsearch=${encodeURIComponent(q)}` +
       `&gsrlimit=${limit}&prop=imageinfo&iiprop=url|extmetadata&format=json&origin=*`;
 
-    const res = await fetch(url, { headers: { "User-Agent": "SkyNewsAI/1.0 (edge)" } });
-    if (!res.ok) continue;
+    try {
+      const res = await withTimeout(fetch(url, { headers: { "User-Agent": "SkyNewsAI/1.0 (edge)" } }), perCallBudget, "commons-timeout");
+      if (!res.ok) continue;
 
-    // Yanıtı açıkça 'any' olarak daralt
-    const data: any = await res.json();
-    const pagesObj = (data?.query?.pages ?? {}) as Record<string, any>;
-    const pages = Object.values(pagesObj) as any[];
+      const data: any = await res.json();
+      const pagesObj = (data?.query?.pages ?? {}) as Record<string, any>;
+      const pages = Object.values(pagesObj) as any[];
 
-    for (const p of pages) {
-      // imageinfo korumalı erişim
-      const infoArr = Array.isArray(p?.imageinfo) ? (p.imageinfo as any[]) : [];
-      const info = infoArr[0] as any | undefined;
+      for (const p of pages) {
+        const infoArr = Array.isArray(p?.imageinfo) ? (p.imageinfo as any[]) : [];
+        const info = infoArr[0] as any | undefined;
+        const imgUrl = info?.url as string | undefined;
+        if (!imgUrl || !(imgUrl.startsWith("http://") || imgUrl.startsWith("https://"))) continue;
 
-      const imgUrl = info?.url as string | undefined;
-      if (!imgUrl || !(imgUrl.startsWith("http://") || imgUrl.startsWith("https://"))) continue;
+        const meta = (info?.extmetadata ?? {}) as Record<string, any>;
+        const license =
+          (meta?.LicenseShortName?.value as string | undefined) ||
+          (meta?.License as string | undefined) ||
+          "Commons";
+        const artistRaw = meta?.Artist?.value as string | undefined;
 
-      const meta = (info?.extmetadata ?? {}) as Record<string, any>;
-      const license =
-        (meta?.LicenseShortName?.value as string | undefined) ||
-        (meta?.License as string | undefined) ||
-        "Commons";
-
-      // Artist alanı bazen HTML içerir — stripTags ile sadele
-      const artistRaw = meta?.Artist?.value as string | undefined;
-
-      results.push({
-        id: String(p?.pageid ?? ""),
-        url: imgUrl,
-        alt: stripTags(String(p?.title ?? q)),
-        credit: artistRaw ? stripTags(artistRaw) : "Wikimedia Commons",
-        link: `https://commons.wikimedia.org/?curid=${p?.pageid ?? ""}`,
-        license,
-      });
-
+        results.push({
+          id: String(p?.pageid ?? ""),
+          url: imgUrl,
+          alt: stripTags(String(p?.title ?? q)),
+          credit: artistRaw ? stripTags(artistRaw) : "Wikimedia Commons",
+          link: `https://commons.wikimedia.org/?curid=${p?.pageid ?? ""}`,
+          license,
+        });
+        if (results.length >= limit) break;
+      }
       if (results.length >= limit) break;
+    } catch {
+      // zaman aşımı vs — sessiz geç
     }
-
-    if (results.length >= limit) break;
   }
-
   return results.slice(0, limit);
 }
 
-// —— Pexels (telifsiz stok) ——
-async function searchPexels(query: string, limit = 6) {
+// —— Pexels (time-bounded) ——
+async function searchPexels(query: string, limit: number, deadline: number) {
   if (!PEXELS_API_KEY) return [];
-  const url = `https://api.pexels.com/v1/search?per_page=${limit}&query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, { headers: { Authorization: PEXELS_API_KEY } });
-  if (!res.ok) return [];
-  const json = await res.json();
-  const photos = Array.isArray(json?.photos) ? json.photos : [];
-  return photos.map((p: any) => {
-    const src = p?.src || {};
-    const best = src?.large2x || src?.large || src?.landscape || src?.medium || src?.original || src?.small || src?.portrait;
-    return {
-      id: String(p?.id ?? ""),
-      url: String(best || ""),
-      alt: String(p?.alt || query),
-      credit: String(p?.photographer || "Pexels"),
-      link: String(p?.url || ""),
-      width: Number(p?.width || 0) || undefined,
-      height: Number(p?.height || 0) || undefined,
-      license: "Pexels License"
-    };
-  }).filter((x: any) => x.url && x.url.startsWith("http"));
+  hardStopIfExpired(deadline);
+  const perCallBudget = Math.min(IMAGE_PROVIDER_BUDGET_MS, remaining(deadline));
+  if (perCallBudget <= 0) return [];
+
+  try {
+    const url = `https://api.pexels.com/v1/search?per_page=${limit}&query=${encodeURIComponent(query)}`;
+    const res = await withTimeout(fetch(url, { headers: { Authorization: PEXELS_API_KEY } }), perCallBudget, "pexels-timeout");
+    if (!res.ok) return [];
+    const json = await res.json();
+    const photos = Array.isArray(json?.photos) ? json.photos : [];
+    return photos.map((p: any) => {
+      const src = p?.src || {};
+      const best = src?.large2x || src?.large || src?.landscape || src?.medium || src?.original || src?.small || src?.portrait;
+      return {
+        id: String(p?.id ?? ""),
+        url: String(best || ""),
+        alt: String(p?.alt || query),
+        credit: String(p?.photographer || "Pexels"),
+        link: String(p?.url || ""),
+        width: Number(p?.width || 0) || undefined,
+        height: Number(p?.height || 0) || undefined,
+        license: "Pexels License"
+      };
+    }).filter((x: any) => x.url && x.url.startsWith("http"));
+  } catch {
+    return [];
+  }
 }
 
-// —— Unsplash (opsiyonel stok) ——
-async function searchUnsplash(query: string, limit = 6) {
+// —— Unsplash (opsiyonel, time-bounded) ——
+async function searchUnsplash(query: string, limit: number, deadline: number) {
   if (!UNSPLASH_ACCESS_KEY) return [];
-  const url = `https://api.unsplash.com/search/photos?per_page=${limit}&query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` } });
-  if (!res.ok) return [];
-  const json = await res.json();
-  const results = Array.isArray(json?.results) ? json.results : [];
-  return results.map((r: any) => ({
-    id: String(r?.id || ""),
-    url: String(r?.urls?.regular || r?.urls?.small || r?.urls?.full || ""),
-    alt: String(r?.alt_description || query),
-    credit: String(r?.user?.name || "Unsplash"),
-    link: String(r?.links?.html || ""),
-    width: Number(r?.width || 0) || undefined,
-    height: Number(r?.height || 0) || undefined,
-    license: "Unsplash License"
-  })).filter((x: any) => x.url && x.url.startsWith("http"));
+  hardStopIfExpired(deadline);
+  const perCallBudget = Math.min(IMAGE_PROVIDER_BUDGET_MS, remaining(deadline));
+  if (perCallBudget <= 0) return [];
+
+  try {
+    const url = `https://api.unsplash.com/search/photos?per_page=${limit}&query=${encodeURIComponent(query)}`;
+    const res = await withTimeout(fetch(url, { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` } }), perCallBudget, "unsplash-timeout");
+    if (!res.ok) return [];
+    const json = await res.json();
+    const results = Array.isArray(json?.results) ? json.results : [];
+    return results.map((r: any) => ({
+      id: String(r?.id || ""),
+      url: String(r?.urls?.regular || r?.urls?.small || r?.urls?.full || ""),
+      alt: String(r?.alt_description || query),
+      credit: String(r?.user?.name || "Unsplash"),
+      link: String(r?.links?.html || ""),
+      width: Number(r?.width || 0) || undefined,
+      height: Number(r?.height || 0) || undefined,
+      license: "Unsplash License"
+    })).filter((x: any) => x.url && x.url.startsWith("http"));
+  } catch {
+    return [];
+  }
 }
 
-// —— Sorgu üretici ——
+// —— Görsel sorgu üretici —— 
 function buildImageQuery(topic: string): string {
   const base = topic.toLowerCase();
   const extra: string[] = [];
@@ -370,36 +436,48 @@ function buildImageQuery(topic: string): string {
   return [topic, "aviation", "airport", ...extra].join(" ");
 }
 
-// —— Görsel garanti hattı ——
-async function ensureImages(ensured: GenResult, topic: string): Promise<GenResult> {
+// —— Görsel garanti hattı (zaman bütçeli) ——
+async function ensureImages(ensured: GenResult, topic: string, imageDeadline: number): Promise<GenResult> {
   const hints = detectEntityHints(topic);
   let imgs = sanitizeImages(ensured.images || []);
+  const need = (n: number) => Math.max(0, n - imgs.length);
 
-  // 1) ENTITY VARSA: Commons’ı öncele (marka/tesis ihtiyacı için en iyi kaynak)
-  if (hints.entity || hints.commonsQueries.length) {
+  // Sağlayıcıları sırayla dene, ama toplam görsel bütçesini aşma
+  let remainingBudget = Math.min(IMAGE_TOTAL_BUDGET_MS, remaining(imageDeadline));
+
+  if ((hints.entity || hints.commonsQueries.length) && remainingBudget > 0 && imgs.length < 3) {
     const commons = await searchCommons(
       hints.commonsQueries.length ? hints.commonsQueries : [hints.entity!],
-      Math.max(6 - imgs.length, 0) || 6
+      Math.min(6, need(6)),
+      now() + Math.min(remainingBudget, IMAGE_PROVIDER_BUDGET_MS)
     );
-    imgs = [...commons, ...imgs];
+    imgs = [...imgs, ...commons];
+    remainingBudget = Math.min(IMAGE_TOTAL_BUDGET_MS, remaining(imageDeadline));
   }
 
-  // 2) Hâlâ azsa: daha “teknik/konu odaklı” stok sorguları (Unsplash → Pexels)
-  if (imgs.length < 3 && hints.stockQueries.length) {
+  if (imgs.length < 3 && remainingBudget > 0 && (UNSPLASH_ACCESS_KEY || PEXELS_API_KEY)) {
     if (UNSPLASH_ACCESS_KEY) {
-      const u = await searchUnsplash(hints.stockQueries.join(" "), 6 - imgs.length);
+      const u = await searchUnsplash(
+        hints.stockQueries.length ? hints.stockQueries.join(" ") : buildImageQuery(topic),
+        need(6),
+        now() + Math.min(remainingBudget, IMAGE_PROVIDER_BUDGET_MS)
+      );
       imgs = [...imgs, ...u];
+      remainingBudget = Math.min(IMAGE_TOTAL_BUDGET_MS, remaining(imageDeadline));
     }
-    if (imgs.length < 3) {
-      const p = await searchPexels(hints.stockQueries.join(" "), 6 - imgs.length);
+    if (imgs.length < 3 && remainingBudget > 0 && PEXELS_API_KEY) {
+      const p = await searchPexels(
+        hints.stockQueries.length ? hints.stockQueries.join(" ") : buildImageQuery(topic),
+        need(6),
+        now() + Math.min(remainingBudget, IMAGE_PROVIDER_BUDGET_MS)
+      );
       imgs = [...imgs, ...p];
     }
   }
 
-  // 3) Genel fallback (topic tabanlı)
-  if (imgs.length < 3) {
-    const q = ensured.imageQuery || buildImageQuery(topic);
-    const p2 = await searchPexels(q, 6 - imgs.length);
+  // Genel fallback (kalanla bir iki kare daha)
+  if (imgs.length < 3 && remaining(imageDeadline) > 0 && PEXELS_API_KEY) {
+    const p2 = await searchPexels(buildImageQuery(topic), need(6), now() + Math.min(remaining(imageDeadline), IMAGE_PROVIDER_BUDGET_MS));
     imgs = [...imgs, ...p2];
   }
 
@@ -415,40 +493,11 @@ async function ensureImages(ensured: GenResult, topic: string): Promise<GenResul
   return ensured;
 }
 
-// —— Model çağrısı ——
-async function callGeminiOnceWithFallback(prompt: string) {
-  let lastErr: any;
-  for (const model of MODEL_CANDIDATES) {
-    const body = {
-      contents: [{ role: "user", parts: [{ text: prompt }]}],
-      generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: MAX_TOKENS }
-    };
-    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let res: Response;
-    try {
-      res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-
-    const text = await res.text();
-    if (res.status === 404) { lastErr = new Error(`HTTP 404 for model ${model}: ${text}`); continue; }
-    if (!res.ok) { throw new Error(`HTTP ${res.status} ${res.statusText} :: ${text}`); }
-
-    try {
-      const json = JSON.parse(text);
-      const out = json?.candidates?.[0]?.content?.parts?.map((p:any)=>p?.text).filter(Boolean).join("\n\n") || "";
-      return String(out);
-    } catch { return text; }
-  }
-  throw lastErr || new Error("No usable model found");
-}
-
 // ==== API ====
 export async function POST(req: NextRequest) {
+  const started = now();
+  const deadline = started + TOTAL_DEADLINE_MS;
+
   try {
     if (!GEMINI_API_KEY) {
       return Response.json({ ok: false, error: "Sunucu yapılandırması eksik: GEMINI_API_KEY" }, { status: 500 });
@@ -457,15 +506,17 @@ export async function POST(req: NextRequest) {
     const { input, maxChars } = (await req.json()) as { input?: string; maxChars?: number };
     const topic = (input || "Güncel bir havacılık gündemi").trim().slice(0, 800);
 
-    // 1) Model
+    // 1) Model (retry + fallback + tek çağrı 5sn timeout)
+    hardStopIfExpired(deadline);
     const raw = await callGeminiWithRetry(
       `${SYSTEM}\n\nKonu: ${topic}\n\nSkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa ve uzun cümleleri dengeli kullan.`
     );
 
-    // 2) JSON parse
+    // 2) JSON parse (gerekirse stub)
+    hardStopIfExpired(deadline);
     const parsedRaw = safeJsonParse(raw);
     if (!parsedRaw) {
-      const stub: GenResult = {
+      let ensuredStub: GenResult = {
         seoTitle: "SkyNews — Güncel gelişme",
         metaDesc: "Güncel havacılık haberi ve ayrıntılar.",
         slug: toSlug(topic).slice(0, 120) || "haber",
@@ -475,20 +526,23 @@ export async function POST(req: NextRequest) {
         images: [],
         html: `<h2>Özet</h2><p>${topic}</p>`,
       };
-      let ensuredStub = ensureMinParagraphsLocal(stub, topic);
+      ensuredStub = ensureMinParagraphsLocal(ensuredStub, topic);
       if (typeof maxChars === "number" && maxChars > 0) {
         ensuredStub.html = compressHtml(ensuredStub.html, maxChars);
         const meta = stripTags(ensuredStub.html).slice(0, 160);
         ensuredStub.metaDesc = meta.replace(/\s+\S*$/, "");
       }
-      ensuredStub = await ensureImages(ensuredStub, topic);
+
+      // Görselleri süre kalırsa dene (time-bounded). Süre yetmezse görselsiz döneriz.
+      const imageDeadline = started + Math.min(TOTAL_DEADLINE_MS,  (TOTAL_DEADLINE_MS - 1200));
+      if (remaining(imageDeadline) > 0) {
+        try { ensuredStub = await ensureImages(ensuredStub, topic, imageDeadline); } catch {}
+      }
       return Response.json({ ok: true, result: ensuredStub });
     }
 
     // 3) Tipleri zorla + min 5 paragraf
-    const coerced = coerceResult(parsedRaw);
-    if (!coerced.imageQuery) coerced.imageQuery = buildImageQuery(topic);
-    let ensured = ensureMinParagraphsLocal(coerced, topic);
+    let ensured = ensureMinParagraphsLocal(coerceResult(parsedRaw), topic);
 
     // 4) Karakter limiti
     if (typeof maxChars === "number" && maxChars > 0) {
@@ -497,17 +551,20 @@ export async function POST(req: NextRequest) {
       ensured.metaDesc = meta.replace(/\s+\S*$/, "");
     }
 
-    // 5) Görseller (Commons → Unsplash → Pexels)
-    ensured = await ensureImages(ensured, topic);
+    // 5) Görseller — kalan süreye kadar dene, süre biterse içerik yine döner
+    const imageDeadline = started + Math.min(TOTAL_DEADLINE_MS, (TOTAL_DEADLINE_MS - 1200));
+    if (remaining(imageDeadline) > 0) {
+      try { ensured = await ensureImages(ensured, topic, imageDeadline); } catch {}
+    }
 
     return Response.json({ ok: true, result: ensured });
 
   } catch (e: any) {
     const msg = String(e?.message || e);
-    const isTransient = /\b(503|UNAVAILABLE|overloaded|timeout|aborted)\b/i.test(msg);
+    const isTransient = isTransientErr(msg) || /BUDGET_EXCEEDED|timeout/i.test(msg);
     return Response.json({
       ok: false,
-      error: isTransient ? "Gemini servisinde geçici bir sorun var. Tekrar deneyin." : `Üretim başarısız: ${msg}`,
+      error: isTransient ? "Geçici yoğunluk veya süre sınırı. Tekrar deneyin." : `Üretim başarısız: ${msg}`,
       details: msg,
     }, { status: isTransient ? 503 : 500 });
   }
