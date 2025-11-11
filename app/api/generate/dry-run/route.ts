@@ -1,7 +1,7 @@
 // app/api/generate/dry-run/route.ts
 import type { NextRequest } from "next/server";
 
-// —— Hızlı mod — tek çağrı — v1 endpoint — gerçek hata metnini göster ——
+// —— Hızlı mod — tek çağrı — v1 endpoint — systemInstruction KULLANMADAN ——
 const FETCH_TIMEOUT_MS = 9000;
 const MAX_TOKENS = 640;
 const MODEL = "gemini-1.5-flash";
@@ -84,6 +84,7 @@ function coerceResult(obj: any): GenResult {
   };
 }
 
+// — “Sistem talimatı” — bunu systemInstruction alanına değil, prompt’un başına ekleyeceğiz.
 const SYSTEM = `Sen SkyNews AI için deneyimli bir haber editörüsün. Çıktıyı mutlaka aşağıdaki JSON yapısında döndür.
 Kurallar:
 - Türkçe yaz; “AI” üslubundan kaçın.
@@ -104,21 +105,23 @@ JSON ŞEMASI:
 }
 Sadece TEK bir JSON döndür.`;
 
+// — Kullanıcı prompt’u; SYSTEM’i başa ekleyip tek mesajda gönderiyoruz —
 function buildUserPrompt(topic: string) {
-  return `Konu: ${topic}
+  return `${SYSTEM}
+
+Konu: ${topic}
 
 SkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa ve uzun cümleleri dengeli kullan.`;
 }
 
-// ——— Tek çağrı ———
+// ——— Tek çağrı — v1 endpoint — systemInstruction alanı YOK ———
 async function callGeminiOnce(prompt: string) {
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }]}],
-    generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: MAX_TOKENS },
-    systemInstruction: { role: "system", parts: [{ text: SYSTEM }] },
+    generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: MAX_TOKENS }
+    // >>> DİKKAT: v1 için burada systemInstruction KULLANMIYORUZ <<<
   };
 
-  // v1 endpoint (v1beta yerine)
   const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
   const controller = new AbortController();
@@ -137,9 +140,7 @@ async function callGeminiOnce(prompt: string) {
 
   const text = await res.text();
 
-  // — Hata ise: statü + ham metni üst katmana gönder —
   if (!res.ok) {
-    // Ör: 401/403 gibi durumları gizlemeyelim; ham gövdeyi iletelim
     throw new Error(`HTTP ${res.status} ${res.statusText} :: ${text}`);
   }
 
@@ -196,17 +197,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: true, result: ensured });
 
   } catch (e: any) {
-    // ÖNEMLİ: “yoğunluk” demeden önce gerçek metni göster
     const msg = String(e?.message || e);
-
-    // sadece gerçek “geçici” durumları yoğunluk say
     const isTransient = /\b(503|UNAVAILABLE|overloaded|timeout|aborted)\b/i.test(msg);
-
     return Response.json({
       ok: false,
       error: isTransient
         ? "Gemini servisinde geçici bir sorun var. Tekrar deneyin."
-        : `Üretim başarısız: ${msg}`,  // 401/403/400 gibi asıl sebep burada görünür
+        : `Üretim başarısız: ${msg}`,
       details: msg,
     }, { status: isTransient ? 503 : 500 });
   }
