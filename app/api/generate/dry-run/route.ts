@@ -1,16 +1,17 @@
 // app/api/generate/dry-run/route.ts
 import type { NextRequest } from "next/server";
 
-// —— Ücretsiz plan için güvenli süre/limitler ——
-const TIME_BUDGET_MS = 9000;      // toplam bütçe ~8 sn
-const FETCH_TIMEOUT_MS = 6500;    // tek model çağrısı 6.5 sn
-const MAX_HTTP_RETRY = 2;         // 503/timeout için 2 deneme
-const BACKOFF_BASE_MS = 400;      // 400ms, 800ms
-const MAX_TOKENS_FIRST = 768;     // ilk deneme
-const MAX_TOKENS_EXPAND = 512;    // genişletme denemesi
+// —— Ücretsiz plan için iyileştirilmiş süre/limitler ——
+const TIME_BUDGET_MS = 9500;     // toplam bütçe ~9.5 sn
+const FETCH_TIMEOUT_MS = 9000;   // tek model çağrısı 9 sn
+const MAX_HTTP_RETRY = 2;        // 503/timeout için 2 deneme
+const BACKOFF_BASE_MS = 400;     // 400ms, 800ms
+const MAX_TOKENS_FIRST = 768;    // ilk deneme
+const MAX_TOKENS_EXPAND = 512;   // genişletme denemesi
 
-// Model fallback (yoğunluk/timeout durumunda daha hızlı modele geç)
-const MODEL_FALLBACK = "gemini-1.5-flash";
+// Modeller: hızlıyı öne al — yoğunlukta daha esnek
+const MODEL_PRIMARY = "gemini-1.5-flash";  // hızlı ve ücretsizde daha stabil
+const MODEL_FALLBACK = "gemini-2.5-pro";   // kalite için ikinci şans
 
 export const runtime = "edge"; // firebase-admin yok; Edge hızlı
 
@@ -199,7 +200,7 @@ async function callWithRetries(prompt: string, { maxTokens = MAX_TOKENS_FIRST } 
       const elapsed = Date.now() - started;
       if (elapsed > TIME_BUDGET_MS) throw new Error("TIME_BUDGET_EXCEEDED");
 
-      // Önce 2.5-pro
+      // Önce hızlı model
       try {
         const out = await callGemini(prompt, {
           model: MODEL_PRIMARY, temperature: 0.7, topP: 0.95, maxTokens, system: SYSTEM
@@ -208,7 +209,7 @@ async function callWithRetries(prompt: string, { maxTokens = MAX_TOKENS_FIRST } 
       } catch (err: any) {
         const retriable = /503|UNAVAILABLE|overloaded|abort|timeout/i.test(String(err));
         if (!retriable) throw err;
-        // Fallback: 1.5-flash
+        // Fallback: kalite için pro
         const out2 = await callGemini(prompt, {
           model: MODEL_FALLBACK, temperature: 0.7, topP: 0.95, maxTokens, system: SYSTEM
         });
