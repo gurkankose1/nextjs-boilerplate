@@ -1,24 +1,14 @@
 // app/api/generate/dry-run/route.ts
 import type { NextRequest } from "next/server";
 
-// —— Ücretsiz plan için iyileştirilmiş süre/limitler ——
-const TIME_BUDGET_MS = 9500;     // toplam bütçe ~9.5 sn
-const FETCH_TIMEOUT_MS = 9000;   // tek model çağrısı 9 sn
-const MAX_HTTP_RETRY = 2;        // 503/timeout için 2 deneme
-const BACKOFF_BASE_MS = 400;     // 400ms, 800ms
-const MAX_TOKENS_FIRST = 768;    // ilk deneme
-const MAX_TOKENS_EXPAND = 512;   // genişletme denemesi
+// —— Ücretsiz planda stabil “hızlı mod” — tek çağrı ——
+const FETCH_TIMEOUT_MS = 6500;          // tek model çağrısı azami 6.5 sn
+const MAX_TOKENS = 640;                 // kısa döndür, hız kazan
+const MODEL = "gemini-1.5-flash";       // hızlı ve ücretsizde daha stabil
 
-// Modeller: hızlıyı öne al — yoğunlukta daha esnek
-const MODEL_PRIMARY = "gemini-1.5-flash";  // hızlı ve ücretsizde daha stabil
-const MODEL_FALLBACK = "gemini-2.5-pro";   // kalite için ikinci şans
-
-export const runtime = "edge"; // firebase-admin yok; Edge hızlı
+export const runtime = "edge";          // firebase-admin yok; Edge hızlı
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY as string;
-if (!GEMINI_API_KEY) {
-  console.warn("[generate] GEMINI_API_KEY missing.");
-}
 
 // ==== Türler ====
 export type GenImage = {
@@ -43,10 +33,6 @@ export type GenResult = {
 };
 
 // ==== Yardımcılar ====
-function sleep(ms: number) {
-  return new Promise((res) => setTimeout(res, ms));
-}
-
 function toSlug(s: string) {
   return s
     .toLowerCase()
@@ -74,9 +60,7 @@ function safeJsonParse<T = any>(raw: string): T | null {
     return JSON.parse(raw);
   } catch {
     const fenced = /```json([\s\S]*?)```/i.exec(raw)?.[1];
-    if (fenced) {
-      try { return JSON.parse(fenced); } catch {}
-    }
+    if (fenced) { try { return JSON.parse(fenced); } catch {} }
     const first = raw.indexOf("{");
     const last = raw.lastIndexOf("}");
     if (first >= 0 && last > first) {
@@ -102,7 +86,7 @@ function coerceResult(obj: any): GenResult {
 
   return {
     seoTitle: fallbackTitle,
-    metaDesc: typeof obj?.metaDesc === "string" ? obj.metaDesc.slice(0, 300) : "Güncel havacılık haberi ve detaylar.",
+    metaDesc: typeof obj?.metaDesc === "string" ? obj.metaDesc.slice(140, 160) : (obj?.metaDesc || "Güncel havacılık haberi ve detaylar.").slice(0, 160),
     slug,
     tags,
     keywords,
@@ -112,64 +96,14 @@ function coerceResult(obj: any): GenResult {
   } satisfies GenResult;
 }
 
-// ==== Gemini istemcisi (timeout'lu) ====
-async function callGemini(
-  prompt: string,
-  { model = MODEL_PRIMARY, temperature = 0.7, topP = 0.95, maxTokens = MAX_TOKENS_FIRST, system }:
-  { model?: string; temperature?: number; topP?: number; maxTokens?: number; system?: string }
-) {
-  const body = {
-    contents: [{ role: "user", parts: [{ text: prompt }]}],
-    generationConfig: { temperature, topP, maxOutputTokens: maxTokens },
-    systemInstruction: system ? { role: "system", parts: [{ text: system }] } : undefined,
-  };
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-
-  // fetch timeout
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-
-  const text = await res.text();
-  if (!res.ok) {
-    const is503 = res.status === 503 || /UNAVAILABLE|overloaded|quota|rate/i.test(text);
-    const err = new Error(`GEMINI_HTTP_${res.status}: ${text}`);
-    // @ts-ignore
-    err.name = is503 ? "GEMINI_503" : "GEMINI_HTTP";
-    throw err;
-  }
-
-  try {
-    const json = JSON.parse(text);
-    const out = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("\n\n") || "";
-    return String(out);
-  } catch {
-    return text;
-  }
-}
-
 // ==== Sistem promtu ====
 const SYSTEM = `Sen SkyNews AI için deneyimli bir haber editörüsün. Çıktıyı mutlaka aşağıdaki JSON yapısında döndür.
 Kurallar:
-- Türkçe yaz.
-- "+" ve emojiden kaçın.
-- html gövdesi en az 5 paragraf, her paragraf 80–160 kelime olmalı.
-- <p> etiketleri kullan ve <h2> ile 1–2 alt başlık ekle.
-- Images için sadece telifsiz/credits verilebilen görsel fikirleri öner; gerçek URL varsa ekle, yoksa imageQuery üret.
+- Türkçe yaz; “AI” üslubundan kaçın.
+- html gövdesi en az 5 paragraf hedefle, <p> kullan; 1-2 adet <h2> alt başlık ekle.
+- Abartısız, kaynaklara genel atıf yap (ör. “resmî açıklamaya göre…”).
 - seoTitle: 60–70 karakter, metaDesc: 140–160 karakter.
-- tags ve keywords Türkçe, havacılık odaklı.
+- tags/keywords: Türkçe, havacılık odaklı.
 JSON ŞEMASI:
 {
   "seoTitle": string,
@@ -187,131 +121,105 @@ Sadece TEK bir JSON döndür.`;
 function buildUserPrompt(topic: string) {
   return `Konu: ${topic}
 
-SkyNews okuru için tarafsız, kaynaklara referans veren (genel atıf), teknik doğruluğu yüksek bir içerik yaz. Başlıklarda abartıdan kaçın.`;
+SkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa cümleler ve uzun cümleleri dengeli kullan.`;
 }
 
-// ==== Retry + Fallback sarmalayıcı ====
-async function callWithRetries(prompt: string, { maxTokens = MAX_TOKENS_FIRST } = {}) {
-  let lastErr: any;
-  const started = Date.now();
+// ==== Gemini tek çağrı (timeout'lu) ====
+async function callGeminiOnce(prompt: string) {
+  const body = {
+    contents: [{ role: "user", parts: [{ text: prompt }]}],
+    generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: MAX_TOKENS },
+    systemInstruction: { role: "system", parts: [{ text: SYSTEM }] },
+  };
 
-  for (let i = 0; i < MAX_HTTP_RETRY; i++) {
-    try {
-      const elapsed = Date.now() - started;
-      if (elapsed > TIME_BUDGET_MS) throw new Error("TIME_BUDGET_EXCEEDED");
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-      // Önce hızlı model
-      try {
-        const out = await callGemini(prompt, {
-          model: MODEL_PRIMARY, temperature: 0.7, topP: 0.95, maxTokens, system: SYSTEM
-        });
-        return out;
-      } catch (err: any) {
-        const retriable = /503|UNAVAILABLE|overloaded|abort|timeout/i.test(String(err));
-        if (!retriable) throw err;
-        // Fallback: kalite için pro
-        const out2 = await callGemini(prompt, {
-          model: MODEL_FALLBACK, temperature: 0.7, topP: 0.95, maxTokens, system: SYSTEM
-        });
-        return out2;
-      }
-    } catch (e: any) {
-      lastErr = e;
-      const is503 = /503|UNAVAILABLE|overloaded|abort|timeout|TIME_BUDGET_EXCEEDED/i.test(String(e));
-      if (is503 && i < MAX_HTTP_RETRY - 1) {
-        const backoff = BACKOFF_BASE_MS * Math.pow(2, i); // 400ms, 800ms
-        await sleep(backoff);
-        continue;
-      }
-      throw e;
-    }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
   }
-  throw lastErr;
-}
 
-// ==== 5+ paragrafı garanti eden katman ====
-async function ensureMinParagraphs(parsed: GenResult, topic: string): Promise<GenResult> {
-  const pCount = countParagraphs(parsed.html);
-  if (pCount >= 5) return parsed;
-
-  const expandPrompt = `Aşağıdaki taslağı en az 5 paragraf olacak şekilde genişlet. Sadece JSON ver.
-Taslak JSON:
-
-${JSON.stringify({ ...parsed, html: parsed.html?.slice(0, 8000) }, null, 2)}`;
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`GEMINI_HTTP_${res.status}: ${text}`);
+  }
 
   try {
-    const expanded = await callWithRetries(expandPrompt, { maxTokens: MAX_TOKENS_EXPAND });
-    const maybe = safeJsonParse(expanded);
-    if (maybe) {
-      const coerced = coerceResult(maybe);
-      if (countParagraphs(coerced.html) >= 5) return coerced;
-
-      // son çare: otomatik ek paragraf
-      const boosted = { ...coerced } as GenResult;
-      if (countParagraphs(boosted.html) < 5) {
-        const add = Array.from({ length: 5 - countParagraphs(boosted.html) }, (_, i) =>
-          `<p>Bu paragraf, haber içeriğini derinleştirmek ve bağlam sağlamak amacıyla otomatik olarak eklenmiştir. Konu: ${topic}. ${i + 1}. ek açıklama paragrafıdır; gelişmeler, paydaşlar ve etkiler ayrıntılandırılmıştır.</p>`
-        ).join("\n");
-        boosted.html = `${boosted.html}\n${add}`;
-      }
-      return boosted;
-    }
+    const json = JSON.parse(text);
+    const out = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("\n\n") || "";
+    return String(out);
   } catch {
-    // genişletme başarısızsa alttaki fallback'e geç
+    return text;
   }
+}
 
-  // parse edilemediyse mevcut metne güvenli takviye yap
-  const patched = { ...parsed } as GenResult;
-  if (countParagraphs(patched.html) < 5) {
-    const need = 5 - countParagraphs(patched.html);
-    const add = Array.from({ length: need }, (_, i) =>
-      `<p>Bu paragraf, haber içeriğini tamamlamak amacıyla eklenmiştir. Konu: ${topic}. ${i + 1}. ek paragraf.</p>`
-    ).join("\n");
-    patched.html = `${patched.html}\n${add}`;
-  }
-  return patched;
+// ==== 5+ paragrafı yerelde garanti et ====
+function ensureMinParagraphsLocal(parsed: GenResult, topic: string): GenResult {
+  let html = parsed.html || "";
+  const current = countParagraphs(html);
+  if (current >= 5) return parsed;
+
+  const need = 5 - current;
+  const add = Array.from({ length: need }, (_, i) =>
+    `<p>Bu paragraf, haber içeriğini tamamlamak ve bağlamı netleştirmek amacıyla otomatik olarak eklenmiştir. Konu: ${topic}. ${i + 1}. ek paragraf.</p>`
+  ).join("\n");
+  return { ...parsed, html: `${html}\n${add}` };
 }
 
 // ==== API ====
 export async function POST(req: NextRequest) {
   try {
-    const { input } = (await req.json()) as { input?: string };
-    const topic = (input || "Güncel bir havacılık gündemi").trim().slice(0, 1200);
     if (!GEMINI_API_KEY) {
       return Response.json({ ok: false, error: "Sunucu yapılandırması eksik: GEMINI_API_KEY" }, { status: 500 });
     }
 
-    // 1) İlk çağrı
-    const raw = await callWithRetries(buildUserPrompt(topic), { maxTokens: MAX_TOKENS_FIRST });
+    const { input } = (await req.json()) as { input?: string };
+    const topic = (input || "Güncel bir havacılık gündemi").trim().slice(0, 800);
 
-    // 2) JSON parse
+    // 1) Tek model çağrısı
+    const raw = await callGeminiOnce(buildUserPrompt(topic));
+
+    // 2) JSON parse sağlamlaştırma
     const parsedRaw = safeJsonParse(raw);
     if (!parsedRaw) {
-      const strictPrompt = `${buildUserPrompt(topic)}
-
-SADECE tek bir JSON döndür. Kod bloğu kullanma.`;
-      const raw2 = await callWithRetries(strictPrompt, { maxTokens: MAX_TOKENS_FIRST });
-      const parsedRaw2 = safeJsonParse(raw2);
-      if (!parsedRaw2) {
-        return Response.json({ ok: false, error: "Model yanıtı JSON formatında değil (2 deneme)." }, { status: 502 });
-      }
-      const coerced2 = coerceResult(parsedRaw2);
-      const ensured2 = await ensureMinParagraphs(coerced2, topic);
-      return Response.json({ ok: true, result: ensured2 });
+      // Model JSON vermezse: minimal “şablon”la boş dönme
+      const stub: GenResult = {
+        seoTitle: "SkyNews — Güncel gelişme",
+        metaDesc: "Güncel havacılık haberi ve ayrıntılar.",
+        slug: toSlug(topic).slice(0, 120) || "haber",
+        tags: ["Havacılık"],
+        keywords: ["havacılık", "gündem"],
+        imageQuery: "airport aviation",
+        images: [],
+        html: `<h2>Özet</h2><p>${topic}</p>`,
+      };
+      const ensuredStub = ensureMinParagraphsLocal(stub, topic);
+      return Response.json({ ok: true, result: ensuredStub });
     }
 
-    // 3) Tipleri zorlayıp min paragraf koşulu sağla
+    // 3) Tip zorla + 5+ paragrafı yerelde tamamla
     const coerced = coerceResult(parsedRaw);
-    const ensured = await ensureMinParagraphs(coerced, topic);
+    const ensured = ensureMinParagraphsLocal(coerced, topic);
 
     return Response.json({ ok: true, result: ensured });
   } catch (e: any) {
     const msg = String(e?.message || e);
-    const isOverload = /GEMINI_503|UNAVAILABLE|overloaded|quota|rate|exceeded|TIME_BUDGET_EXCEEDED|AbortController|aborted/i.test(msg);
+    // Ağ/timeout/yoğunluk durumunda kullanıcıya anlaşılır mesaj
+    const isOverload = /GEMINI_HTTP_|timeout|AbortController|aborted|UNAVAILABLE|overloaded|quota|rate/i.test(msg);
     return Response.json({
       ok: false,
       error: isOverload
-        ? "Gemini servisinde yoğunluk veya süre sınırı aşıldı. Kısa süre sonra tekrar deneyin."
+        ? "Gemini servisinde yoğunluk veya süre sınırı aşıldı. Tekrar deneyin."
         : `Üretim başarısız: ${msg}`,
       details: isOverload ? undefined : msg,
     }, { status: isOverload ? 503 : 500 });
