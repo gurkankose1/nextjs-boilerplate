@@ -59,7 +59,8 @@ export default function StudioPage() {
     try {
       const res = await fetch("/api/generate/dry-run", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input, maxChars: maxChars || undefined }),
+        - body: JSON.stringify({ input, maxChars: maxChars || undefined }),
++ body: JSON.stringify({ input, maxChars: maxChars || undefined, fast: true }),
       });
       const raw = await res.text();
       let j: any; try { j = JSON.parse(raw); } catch { throw new Error("API raw: " + raw.slice(0, 600)); }
