@@ -4,7 +4,8 @@ import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { adminDb } from "../../../../lib/firebaseAdmin";
+- import { adminDb } from "../../../lib/firebaseAdmin";
++ import { adminDb } from "../../../../lib/firebaseAdmin";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 
