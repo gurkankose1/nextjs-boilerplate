@@ -1,10 +1,10 @@
 // app/api/generate/dry-run/route.ts
 import type { NextRequest } from "next/server";
 
-// —— Hızlı mod — tek çağrı — v1 endpoint — systemInstruction KULLANMADAN ——
+// —— Hızlı mod — tek çağrı — v1 endpoint — doğru model adları ——
 const FETCH_TIMEOUT_MS = 9000;
 const MAX_TOKENS = 640;
-const MODEL = "gemini-1.5-flash";
+const MODEL_CANDIDATES = ["gemini-1.5-flash-001", "gemini-1.5-flash-latest"]; // sırayla dene
 
 export const runtime = "edge";
 
@@ -84,7 +84,7 @@ function coerceResult(obj: any): GenResult {
   };
 }
 
-// — “Sistem talimatı” — bunu systemInstruction alanına değil, prompt’un başına ekleyeceğiz.
+// — Sistem yönergesini prompt başına ekliyoruz (v1’de systemInstruction alanı yok) —
 const SYSTEM = `Sen SkyNews AI için deneyimli bir haber editörüsün. Çıktıyı mutlaka aşağıdaki JSON yapısında döndür.
 Kurallar:
 - Türkçe yaz; “AI” üslubundan kaçın.
@@ -105,7 +105,6 @@ JSON ŞEMASI:
 }
 Sadece TEK bir JSON döndür.`;
 
-// — Kullanıcı prompt’u; SYSTEM’i başa ekleyip tek mesajda gönderiyoruz —
 function buildUserPrompt(topic: string) {
   return `${SYSTEM}
 
@@ -114,43 +113,55 @@ Konu: ${topic}
 SkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa ve uzun cümleleri dengeli kullan.`;
 }
 
-// ——— Tek çağrı — v1 endpoint — systemInstruction alanı YOK ———
-async function callGeminiOnce(prompt: string) {
-  const body = {
-    contents: [{ role: "user", parts: [{ text: prompt }]}],
-    generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: MAX_TOKENS }
-    // >>> DİKKAT: v1 için burada systemInstruction KULLANMIYORUZ <<<
-  };
+// — Tek çağrı: v1 endpoint, 404 olursa sıradaki model adına düş —
+async function callGeminiOnceWithFallback(prompt: string) {
+  let lastErr: any;
+  for (const model of MODEL_CANDIDATES) {
+    const body = {
+      contents: [{ role: "user", parts: [{ text: prompt }]}],
+      generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: MAX_TOKENS }
+    };
+    const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
-  const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e;
+      continue; // ağ hatasıyla bir sonraki modele dene
+    } finally {
+      clearTimeout(timer);
+    }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
+    const text = await res.text();
+
+    if (res.status === 404) {
+      // bu model v1’de yok → sıradaki adaya geç
+      lastErr = new Error(`HTTP 404 for model ${model}: ${text}`);
+      continue;
+    }
+    if (!res.ok) {
+      // diğer hataları üst kata aktar (401/403/400 vs. gerçek sebebi görürüz)
+      throw new Error(`HTTP ${res.status} ${res.statusText} :: ${text}`);
+    }
+
+    try {
+      const json = JSON.parse(text);
+      const out = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("\n\n") || "";
+      return String(out);
+    } catch {
+      return text;
+    }
   }
-
-  const text = await res.text();
-
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} ${res.statusText} :: ${text}`);
-  }
-
-  try {
-    const json = JSON.parse(text);
-    const out = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("\n\n") || "";
-    return String(out);
-  } catch {
-    return text;
-  }
+  throw lastErr || new Error("No usable model found");
 }
 
 // 5+ paragrafı yerelde garanti et
@@ -165,6 +176,7 @@ function ensureMinParagraphsLocal(parsed: GenResult, topic: string): GenResult {
   return { ...parsed, html: `${html}\n${add}` };
 }
 
+// — API —
 export async function POST(req: NextRequest) {
   try {
     if (!GEMINI_API_KEY) {
@@ -174,7 +186,7 @@ export async function POST(req: NextRequest) {
     const { input } = (await req.json()) as { input?: string };
     const topic = (input || "Güncel bir havacılık gündemi").trim().slice(0, 800);
 
-    const raw = await callGeminiOnce(buildUserPrompt(topic));
+    const raw = await callGeminiOnceWithFallback(buildUserPrompt(topic));
 
     const parsedRaw = safeJsonParse(raw);
     if (!parsedRaw) {
