@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth, googleProvider } from "../../lib/firebaseClient";
+import { auth, googleProvider } from "@/lib/firebaseClient";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 
 type AllowResp = { ok: boolean; error?: string };
