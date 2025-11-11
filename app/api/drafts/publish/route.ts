@@ -2,7 +2,8 @@
 import { NextRequest } from "next/server";
 import { adminDb as db } from "../../../../lib/firebaseAdmin";
 
-export const runtime = "edge";
+// IMPORTANT: firebase-admin => Node.js runtime
+export const runtime = "nodejs";
 
 function toSlug(s: string) {
   return s
