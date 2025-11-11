@@ -25,6 +25,7 @@ export default function StudioPage() {
 
   // form/dry-run state
   const [input, setInput] = useState("");
+  const [maxChars, setMaxChars] = useState<number | "">(""); // ← yeni
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<GenResult | null>(null);
 
@@ -83,36 +84,35 @@ export default function StudioPage() {
     setUserEmail(null);
   };
 
- const generate = async () => {
-  setErr(null);
-  setResult(null);
-  setSavedId(null);
-  setRunning(true);
-  try {
-    const res = await fetch("/api/generate/dry-run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input }),
-    });
-
-    // ---- güvenli parse ----
-    const raw = await res.text();      // 1) önce ham metni al
-    let j: any;
+  const generate = async () => {
+    setErr(null);
+    setResult(null);
+    setSavedId(null);
+    setRunning(true);
     try {
-      j = JSON.parse(raw);             // 2) JSON'a çevirmeyi dene
-    } catch {
-      // 3) JSON değilse ham metni ekrana hatayla göster
-      throw new Error("API raw: " + raw.slice(0, 500));
-    }
-    if (!j.ok) throw new Error(j.error || "Üretim başarısız");
+      const res = await fetch("/api/generate/dry-run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input, maxChars: maxChars || undefined }), // ← limit gönder
+      });
 
-    setResult(j.result as GenResult);
-  } catch (e: any) {
-    setErr(String(e?.message || e));
-  } finally {
-    setRunning(false);
-  }
-};
+      // ---- güvenli parse ----
+      const raw = await res.text();
+      let j: any;
+      try {
+        j = JSON.parse(raw);
+      } catch {
+        throw new Error("API raw: " + raw.slice(0, 600));
+      }
+      if (!j.ok) throw new Error(j.error || "Üretim başarısız");
+
+      setResult(j.result as GenResult);
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    } finally {
+      setRunning(false);
+    }
+  };
 
   const saveDraft = async () => {
     if (!result) return;
@@ -177,11 +177,23 @@ export default function StudioPage() {
         </button>
       </div>
 
-      {/* --- ÜSTTE GÖRÜNÜR BUTONLAR --- */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      {/* --- ÜSTTE GÖRÜNÜR BUTONLAR + KARAKTER LİMİTİ --- */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={generate} disabled={running || !input.trim()} style={{ padding: 10, border: "1px solid #333" }}>
           {running ? "Üretiyor..." : "Generate News (dry-run)"}
         </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ fontSize: 14, color: "#555" }}>Karakter limiti (opsiyonel):</label>
+          <input
+            type="number"
+            min={300}
+            max={8000}
+            value={maxChars}
+            onChange={(e)=>setMaxChars(e.target.value ? Number(e.target.value) : "")}
+            placeholder="ör. 1200"
+            style={{ width: 120, padding: 6, border: "1px solid #ccc" }}
+          />
+        </div>
         <button
           onClick={saveDraft}
           disabled={!result || saving}
@@ -194,9 +206,7 @@ export default function StudioPage() {
       </div>
 
       <section style={{ display: "grid", gap: 8 }}>
-        <label>
-          <strong>Kaynak başlığı / linki / kısa özet</strong>
-        </label>
+        <label><strong>Kaynak başlığı / linki / kısa özet</strong></label>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -204,7 +214,7 @@ export default function StudioPage() {
           rows={5}
           style={{ width: "100%", padding: 8, border: "1px solid #ccc" }}
         />
-        {err && <p style={{ color: "crimson" }}>{err}</p>}
+        {err && <p style={{ color: "crimson", whiteSpace: "pre-wrap" }}>{err}</p>}
       </section>
 
       {result && (
