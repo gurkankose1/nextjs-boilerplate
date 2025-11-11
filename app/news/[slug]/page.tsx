@@ -4,9 +4,11 @@ import { adminDb } from "../../../lib/firebaseAdmin";
 
 // Bu regex, "otomatik ek paragraf" metnini taşıyan <p> bloklarını komple siler.
 // Hem noktalama, boşluk, varyasyon toleranslı; büyük/küçük harf duyarsızdır.
+// "otomatik ek paragraf" metnini taşıyan <p> bloklarını komple siler.
 function stripAutoAdded(html: string): string {
   if (!html) return "";
-  const re = /<p[^>]*>\s*Bu paragraf,\s*haber içeriğini\s*tamamlamak(?:.*?)?<\/p>\s*/gis;
+  // Not: 's' bayrağı yok; onun yerine [\s\S]*? kullanıyoruz
+  const re = /<p[^>]*>\s*Bu paragraf,\s*haber içeriğini\s*tamamlamak[\s\S]*?<\/p>\s*/gi;
   let out = html.replace(re, "");
   // Temizlik sonrası oluşabilecek fazla boşluk/çift <br> vb. toparla (hafif dokunuşlar):
   out = out.replace(/\n{3,}/g, "\n\n").replace(/(\s|&nbsp;){2,}/g, " ");
