@@ -1,12 +1,17 @@
+// app/api/generate/dry-run/route.ts
 import type { NextRequest } from "next/server";
 
 // —— Ücretsiz plan için güvenli süre/limitler ——
-const TIME_BUDGET_MS = 9000;      // toplam bütçe ~9sn
-const FETCH_TIMEOUT_MS = 8000;    // tek model çağrısı 8sn
-const MAX_HTTP_RETRY = 2;         // 503 vb. için 2 deneme
+const TIME_BUDGET_MS = 8000;      // toplam bütçe ~8 sn
+const FETCH_TIMEOUT_MS = 6500;    // tek model çağrısı 6.5 sn
+const MAX_HTTP_RETRY = 2;         // 503/timeout için 2 deneme
 const BACKOFF_BASE_MS = 400;      // 400ms, 800ms
-const MAX_TOKENS_FIRST = 1024;    // ilk deneme
-const MAX_TOKENS_EXPAND = 768;    // genişletme
+const MAX_TOKENS_FIRST = 768;     // ilk deneme
+const MAX_TOKENS_EXPAND = 512;    // genişletme denemesi
+
+// Model fallback (yoğunluk/timeout durumunda daha hızlı modele geç)
+const MODEL_PRIMARY = "gemini-2.5-pro";
+const MODEL_FALLBACK = "gemini-1.5-flash";
 
 export const runtime = "edge"; // firebase-admin yok; Edge hızlı
 
@@ -110,8 +115,8 @@ function coerceResult(obj: any): GenResult {
 // ==== Gemini istemcisi (timeout'lu) ====
 async function callGemini(
   prompt: string,
-  { temperature = 0.7, topP = 0.95, maxTokens = MAX_TOKENS_FIRST, system }:
-  { temperature?: number; topP?: number; maxTokens?: number; system?: string }
+  { model = MODEL_PRIMARY, temperature = 0.7, topP = 0.95, maxTokens = MAX_TOKENS_FIRST, system }:
+  { model?: string; temperature?: number; topP?: number; maxTokens?: number; system?: string }
 ) {
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }]}],
@@ -119,7 +124,7 @@ async function callGemini(
     systemInstruction: system ? { role: "system", parts: [{ text: system }] } : undefined,
   };
 
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=" + GEMINI_API_KEY;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
   // fetch timeout
   const controller = new AbortController();
@@ -178,13 +183,14 @@ JSON ŞEMASI:
 }
 Sadece TEK bir JSON döndür.`;
 
+// ==== Prompt ====
 function buildUserPrompt(topic: string) {
   return `Konu: ${topic}
 
 SkyNews okuru için tarafsız, kaynaklara referans veren (genel atıf), teknik doğruluğu yüksek bir içerik yaz. Başlıklarda abartıdan kaçın.`;
 }
 
-// ==== Retry sarmalayıcı ====
+// ==== Retry + Fallback sarmalayıcı ====
 async function callWithRetries(prompt: string, { maxTokens = MAX_TOKENS_FIRST } = {}) {
   let lastErr: any;
   const started = Date.now();
@@ -194,13 +200,24 @@ async function callWithRetries(prompt: string, { maxTokens = MAX_TOKENS_FIRST } 
       const elapsed = Date.now() - started;
       if (elapsed > TIME_BUDGET_MS) throw new Error("TIME_BUDGET_EXCEEDED");
 
-      const out = await callGemini(prompt, {
-        temperature: 0.7, topP: 0.95, maxTokens, system: SYSTEM
-      });
-      return out;
+      // Önce 2.5-pro
+      try {
+        const out = await callGemini(prompt, {
+          model: MODEL_PRIMARY, temperature: 0.7, topP: 0.95, maxTokens, system: SYSTEM
+        });
+        return out;
+      } catch (err: any) {
+        const retriable = /503|UNAVAILABLE|overloaded|abort|timeout/i.test(String(err));
+        if (!retriable) throw err;
+        // Fallback: 1.5-flash
+        const out2 = await callGemini(prompt, {
+          model: MODEL_FALLBACK, temperature: 0.7, topP: 0.95, maxTokens, system: SYSTEM
+        });
+        return out2;
+      }
     } catch (e: any) {
       lastErr = e;
-      const is503 = e?.name === "GEMINI_503" || /503|UNAVAILABLE|overloaded|abort|timeout/i.test(String(e));
+      const is503 = /503|UNAVAILABLE|overloaded|abort|timeout|TIME_BUDGET_EXCEEDED/i.test(String(e));
       if (is503 && i < MAX_HTTP_RETRY - 1) {
         const backoff = BACKOFF_BASE_MS * Math.pow(2, i); // 400ms, 800ms
         await sleep(backoff);
@@ -290,7 +307,7 @@ SADECE tek bir JSON döndür. Kod bloğu kullanma.`;
     return Response.json({ ok: true, result: ensured });
   } catch (e: any) {
     const msg = String(e?.message || e);
-    const isOverload = /GEMINI_503|UNAVAILABLE|overloaded|quota|rate|exceeded|TIME_BUDGET_EXCEEDED|AbortController/i.test(msg);
+    const isOverload = /GEMINI_503|UNAVAILABLE|overloaded|quota|rate|exceeded|TIME_BUDGET_EXCEEDED|AbortController|aborted/i.test(msg);
     return Response.json({
       ok: false,
       error: isOverload
