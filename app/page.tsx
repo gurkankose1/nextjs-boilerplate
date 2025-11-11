@@ -1,5 +1,5 @@
 // app/page.tsx
-export default function Home() {
+export default function Home() {  //dikkat
   return (
     <main style={{ padding: 24 }}>
       <h1>SkyNews AI — Starter</h1>
