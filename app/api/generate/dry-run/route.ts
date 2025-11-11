@@ -27,6 +27,7 @@ function toSlug(s: string) {
     .replace(/ç/g,"c").replace(/ğ/g,"g").replace(/ı/g,"i").replace(/ö/g,"o").replace(/ş/g,"s").replace(/ü/g,"u")
     .replace(/[^a-z0-9\s-]/g,"").trim().replace(/\s+/g,"-").replace(/-+/g,"-");
 }
+
 function isValidHttpUrl(u?: string) {
   if (!u) return false;
   try {
@@ -46,7 +47,7 @@ function sanitizeImages(arr: any[]): GenImage[] {
     width: typeof i?.width === "number" ? i.width : undefined,
     height: typeof i?.height === "number" ? i.height : undefined,
   }))
-  .filter(i => isValidHttpUrl(i.url))   // sadece gerçek http(s) URL’ler
+  .filter(i => isValidHttpUrl(i.url))
   .slice(0, 6);
 }
 
@@ -76,6 +77,7 @@ function countParagraphs(html: string) {
     .split(/\n+/).map(x=>x.trim()).filter(x=>x.length>120).length;
   return Math.max(pTags, splitByBr);
 }
+
 function safeJsonParse<T=any>(raw: string): T|null {
   try { return JSON.parse(raw); } catch {
     const fenced = /```json([\s\S]*?)```/i.exec(raw)?.[1];
@@ -85,16 +87,11 @@ function safeJsonParse<T=any>(raw: string): T|null {
     return null;
   }
 }
+
 function coerceResult(obj: any): GenResult {
   const fallbackTitle = typeof obj?.seoTitle==="string" && obj.seoTitle.length>3 ? obj.seoTitle : "SkyNews AI Haberi";
   const slug = toSlug(obj?.slug || fallbackTitle || "haber").slice(0,140) || "haber";
   const images: GenImage[] = sanitizeImages(obj?.images || []);
-    ? obj.images.filter((x:any)=>x && x.url).map((i:any)=>({
-        id:i.id, url:String(i.url), alt:i.alt, credit:i.credit, link:i.link,
-        width: typeof i.width==="number"?i.width:undefined,
-        height: typeof i.height==="number"?i.height:undefined,
-      }))
-    : [];
   const tags = Array.isArray(obj?.tags)?obj.tags.map(String).slice(0,8):[];
   const keywords = Array.isArray(obj?.keywords)?obj.keywords.map(String).slice(0,16):[];
   return {
@@ -220,7 +217,6 @@ SkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içeri
 
 // —— Görsel arama sorgusu üret (konuya havacılık bağlamı ekler) ——
 function buildImageQuery(topic: string): string {
-  // TEC örneği için faydalı anahtar kelimeler:
   const base = topic.toLowerCase();
   const extra: string[] = [];
   if (/tec|turkish engine center|pratt|whitney|thy|türk hava yolları/.test(base)) {
@@ -229,7 +225,6 @@ function buildImageQuery(topic: string): string {
   if (/grev|strike|sendika|tisl/.test(base)) {
     extra.push("aviation workers", "airport operations");
   }
-  // Sonuç
   return [topic, "aviation", "airport", ...extra].join(" ");
 }
 
@@ -323,12 +318,7 @@ export async function POST(req: NextRequest) {
         const meta = stripTags(ensuredStub.html).slice(0, 160);
         ensuredStub.metaDesc = meta.replace(/\s+\S*$/, "");
       }
-      // — Görselleri doldur —
-      if (!ensuredStub.images || ensuredStub.images.length === 0) {
-        const q = ensuredStub.imageQuery || buildImageQuery(topic);
-        const pics = await searchPexels(q);
-        if (pics.length > 0) ensuredStub.images = pics;
-      }
+      ensuredStub = await ensureImages(ensuredStub, topic); // ← görselleri kesinleştir
       return Response.json({ ok: true, result: ensuredStub });
     }
 
@@ -344,12 +334,8 @@ export async function POST(req: NextRequest) {
       ensured.metaDesc = meta.replace(/\s+\S*$/, "");
     }
 
-    // 5) Görseller yoksa Pexels'ten otomatik doldur
-    if (!ensured.images || ensured.images.length === 0) {
-      const q = ensured.imageQuery || buildImageQuery(topic);
-      const pics = await searchPexels(q);
-      if (pics.length > 0) ensured.images = pics;
-    }
+    // 5) Görselleri kesinleştir (temizle + Pexels ile tamamla)
+    ensured = await ensureImages(ensured, topic);
 
     return Response.json({ ok: true, result: ensured });
 
