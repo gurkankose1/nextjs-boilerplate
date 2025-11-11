@@ -2,7 +2,7 @@
 // 1) app/api/drafts/list/route.ts
 // ===============================
 import { NextRequest } from "next/server";
-import { adminDb } from "../../../lib/firebaseAdmin";
+import { adminDb } from "../../../../lib/firebaseAdmin";
 
 
 export const runtime = "edge";
