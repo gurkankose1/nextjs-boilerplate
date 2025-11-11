@@ -1,9 +1,9 @@
 // app/api/cron/generate/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { adminDb } from "../../../../lib/firebaseAdmin"; // ← yolu kendi yapına göre kontrol et
+import { adminDb } from "../../../../lib/firebaseAdmin";  // ← DÜZELTİLDİ
 
 // ——— CRON auth ———
 function ensureCronAuth(req: NextRequest) {
