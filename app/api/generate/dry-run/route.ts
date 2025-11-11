@@ -27,6 +27,48 @@ function toSlug(s: string) {
     .replace(/ç/g,"c").replace(/ğ/g,"g").replace(/ı/g,"i").replace(/ö/g,"o").replace(/ş/g,"s").replace(/ü/g,"u")
     .replace(/[^a-z0-9\s-]/g,"").trim().replace(/\s+/g,"-").replace(/-+/g,"-");
 }
+function isValidHttpUrl(u?: string) {
+  if (!u) return false;
+  try {
+    const x = new URL(u);
+    return (x.protocol === "http:" || x.protocol === "https:") && !/example\.com/i.test(x.hostname);
+  } catch { return false; }
+}
+
+function sanitizeImages(arr: any[]): GenImage[] {
+  if (!Array.isArray(arr)) return [];
+  return arr.map((i: any) => ({
+    id: i?.id ? String(i.id) : undefined,
+    url: i?.url ? String(i.url) : "",
+    alt: i?.alt ? String(i.alt) : undefined,
+    credit: i?.credit ? String(i.credit) : undefined,
+    link: i?.link ? String(i.link) : undefined,
+    width: typeof i?.width === "number" ? i.width : undefined,
+    height: typeof i?.height === "number" ? i.height : undefined,
+  }))
+  .filter(i => isValidHttpUrl(i.url))   // sadece gerçek http(s) URL’ler
+  .slice(0, 6);
+}
+
+async function ensureImages(ensured: GenResult, topic: string): Promise<GenResult> {
+  // 1) Modelin gönderdiğini temizle
+  let imgs = sanitizeImages(ensured.images || []);
+  // 2) Çok azsa Pexels ile tamamla
+  if (imgs.length < 3) {
+    const q = ensured.imageQuery || buildImageQuery(topic);
+    const more = await searchPexels(q, 6 - imgs.length);
+    imgs = [...imgs, ...more].slice(0, 6);
+  }
+  // 3) Alt/credit boşsa doldur
+  imgs = imgs.map(i => ({
+    ...i,
+    alt: i.alt || ensured.seoTitle || ensured.slug,
+    credit: i.credit || "Pexels",
+  }));
+  ensured.images = imgs;
+  return ensured;
+}
+
 function countParagraphs(html: string) {
   if (!html) return 0;
   const pTags = (html.match(/<p[\s>][\s\S]*?<\/p>/gi) || []).length;
@@ -46,7 +88,7 @@ function safeJsonParse<T=any>(raw: string): T|null {
 function coerceResult(obj: any): GenResult {
   const fallbackTitle = typeof obj?.seoTitle==="string" && obj.seoTitle.length>3 ? obj.seoTitle : "SkyNews AI Haberi";
   const slug = toSlug(obj?.slug || fallbackTitle || "haber").slice(0,140) || "haber";
-  const images: GenImage[] = Array.isArray(obj?.images)
+  const images: GenImage[] = sanitizeImages(obj?.images || []);
     ? obj.images.filter((x:any)=>x && x.url).map((i:any)=>({
         id:i.id, url:String(i.url), alt:i.alt, credit:i.credit, link:i.link,
         width: typeof i.width==="number"?i.width:undefined,
