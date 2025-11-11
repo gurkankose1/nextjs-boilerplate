@@ -2,7 +2,7 @@
 import type { NextRequest } from "next/server";
 
 // —— Ücretsiz plan için güvenli süre/limitler ——
-const TIME_BUDGET_MS = 8000;      // toplam bütçe ~8 sn
+const TIME_BUDGET_MS = 9000;      // toplam bütçe ~8 sn
 const FETCH_TIMEOUT_MS = 6500;    // tek model çağrısı 6.5 sn
 const MAX_HTTP_RETRY = 2;         // 503/timeout için 2 deneme
 const BACKOFF_BASE_MS = 400;      // 400ms, 800ms
@@ -10,7 +10,6 @@ const MAX_TOKENS_FIRST = 768;     // ilk deneme
 const MAX_TOKENS_EXPAND = 512;    // genişletme denemesi
 
 // Model fallback (yoğunluk/timeout durumunda daha hızlı modele geç)
-const MODEL_PRIMARY = "gemini-2.5-pro";
 const MODEL_FALLBACK = "gemini-1.5-flash";
 
 export const runtime = "edge"; // firebase-admin yok; Edge hızlı
