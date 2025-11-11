@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { adminDb } from "@/lib/firebaseAdmin";  // ← DÜZELTİLDİ
+import { adminDb } from "@/lib/firebaseAdmin";
 
 // ——— CRON auth ———
 function ensureCronAuth(req: NextRequest) {
