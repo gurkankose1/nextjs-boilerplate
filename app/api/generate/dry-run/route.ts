@@ -224,34 +224,56 @@ function detectEntityHints(topic: string): EntityHints {
   };
 }
 
-// —— Wikimedia Commons (lisanslı) ——
+// —— Wikimedia Commons (lisanslı) — TS-safe sürüm ——
 async function searchCommons(queries: string[], limit = 6): Promise<GenImage[]> {
   const results: GenImage[] = [];
+
   for (const q of queries) {
-    const url = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrlimit=${limit}&prop=imageinfo&iiprop=url|extmetadata&format=json&origin=*`;
+    const url =
+      `https://commons.wikimedia.org/w/api.php` +
+      `?action=query&generator=search&gsrsearch=${encodeURIComponent(q)}` +
+      `&gsrlimit=${limit}&prop=imageinfo&iiprop=url|extmetadata&format=json&origin=*`;
+
     const res = await fetch(url, { headers: { "User-Agent": "SkyNewsAI/1.0 (edge)" } });
     if (!res.ok) continue;
-    const json: any = await res.json();
-    const pages = json?.query?.pages ? Object.values(json.query.pages) : [];
+
+    // Yanıtı açıkça 'any' olarak daralt
+    const data: any = await res.json();
+    const pagesObj = (data?.query?.pages ?? {}) as Record<string, any>;
+    const pages = Object.values(pagesObj) as any[];
+
     for (const p of pages) {
-      const info = p?.imageinfo?.[0];
-      const imgUrl = info?.url;
-      const meta = info?.extmetadata || {};
-      const license = meta?.LicenseShortName?.value || meta?.License || "Commons";
-      const artist = meta?.Artist?.value ? stripTags(meta.Artist.value) : undefined;
-      if (!imgUrl || !isValidHttpUrl(imgUrl)) continue;
+      // imageinfo korumalı erişim
+      const infoArr = Array.isArray(p?.imageinfo) ? (p.imageinfo as any[]) : [];
+      const info = infoArr[0] as any | undefined;
+
+      const imgUrl = info?.url as string | undefined;
+      if (!imgUrl || !(imgUrl.startsWith("http://") || imgUrl.startsWith("https://"))) continue;
+
+      const meta = (info?.extmetadata ?? {}) as Record<string, any>;
+      const license =
+        (meta?.LicenseShortName?.value as string | undefined) ||
+        (meta?.License as string | undefined) ||
+        "Commons";
+
+      // Artist alanı bazen HTML içerir — stripTags ile sadele
+      const artistRaw = meta?.Artist?.value as string | undefined;
+
       results.push({
         id: String(p?.pageid ?? ""),
         url: imgUrl,
-        alt: stripTags(p?.title || q),
-        credit: artist || "Wikimedia Commons",
+        alt: stripTags(String(p?.title ?? q)),
+        credit: artistRaw ? stripTags(artistRaw) : "Wikimedia Commons",
         link: `https://commons.wikimedia.org/?curid=${p?.pageid ?? ""}`,
-        license
+        license,
       });
+
       if (results.length >= limit) break;
     }
+
     if (results.length >= limit) break;
   }
+
   return results.slice(0, limit);
 }
 
