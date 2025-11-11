@@ -25,7 +25,7 @@ export default function StudioPage() {
 
   // form/dry-run state
   const [input, setInput] = useState("");
-  const [maxChars, setMaxChars] = useState<number | "">(""); // ← yeni
+  const [maxChars, setMaxChars] = useState<number | "">("");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<GenResult | null>(null);
 
@@ -93,10 +93,9 @@ export default function StudioPage() {
       const res = await fetch("/api/generate/dry-run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input, maxChars: maxChars || undefined }), // ← limit gönder
+        body: JSON.stringify({ input, maxChars: maxChars || undefined }),
       });
 
-      // ---- güvenli parse ----
       const raw = await res.text();
       let j: any;
       try {
@@ -240,14 +239,28 @@ export default function StudioPage() {
             <div style={{ display: "grid", gap: 8 }}>
               <strong>Görsel Adayları (Pexels):</strong>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
-                {result.images.map((img, idx) => (
-                  <a key={img.id || idx} href={img.link || img.url} target="_blank" style={{ border: "1px solid #eee", padding: 6 }}>
-                    <img src={img.url} alt={img.alt || ""} style={{ width: "100%", height: 140, objectFit: "cover" }} />
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      Fotoğraf: {img.credit || "Pexels"}
-                    </div>
-                  </a>
-                ))}
+                {result.images.map((img, idx) => {
+                  const validUrl = typeof img.url === "string"
+                    && /^https?:\/\//i.test(img.url)
+                    && !/example\.com/i.test(img.url);
+                  if (!validUrl) return null;
+
+                  const href = (img.link && /^https?:\/\//i.test(img.link)) ? img.link : img.url;
+
+                  return (
+                    <a key={img.id || idx} href={href} target="_blank" style={{ border: "1px solid #eee", padding: 6 }}>
+                      <img
+                        src={img.url}
+                        alt={img.alt || ""}
+                        style={{ width: "100%", height: 140, objectFit: "cover" }}
+                        loading="lazy"
+                      />
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                        Fotoğraf: {img.credit || "Pexels"}
+                      </div>
+                    </a>
+                  );
+                })}
               </div>
             </div>
           )}
