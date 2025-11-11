@@ -1,9 +1,10 @@
 // app/api/cron/fetch/route.ts
-import { NextRequest, NextResponse } from "next/server";
+// app/api/cron/fetch/route.ts
+import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { adminDb } from "../../../../lib/firebaseAdmin"; // ← yolu kendi yapına göre kontrol et
+import { adminDb } from "../../../../lib/firebaseAdmin";  // ← DÜZELTİLDİ
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 
