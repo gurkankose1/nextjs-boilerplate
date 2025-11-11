@@ -148,7 +148,7 @@ export default function StudioPage() {
         <button onClick={login} style={{ padding: 8, border: "1px solid #ccc" }}>
           Google ile Giriş
         </button>
-        {err && <p style={{ color: "crimson" }}>{err}</p>}
+        {err && <p style={{ color: "crimson", whiteSpace: "pre-wrap" }}>{err}</p>}
       </main>
     );
   }
