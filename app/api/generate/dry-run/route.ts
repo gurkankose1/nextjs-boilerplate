@@ -9,6 +9,7 @@ const MODEL_CANDIDATES = ["gemini-2.5-flash", "gemini-2.0-flash"];
 export const runtime = "edge";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY as string;
+const PEXELS_API_KEY = process.env.PEXELS_API_KEY as string | undefined;
 
 // ==== Türler ====
 export type GenImage = {
@@ -175,6 +176,45 @@ Konu: ${topic}
 SkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa ve uzun cümleleri dengeli kullan.`;
 }
 
+// —— Görsel arama sorgusu üret (konuya havacılık bağlamı ekler) ——
+function buildImageQuery(topic: string): string {
+  // TEC örneği için faydalı anahtar kelimeler:
+  const base = topic.toLowerCase();
+  const extra: string[] = [];
+  if (/tec|turkish engine center|pratt|whitney|thy|türk hava yolları/.test(base)) {
+    extra.push("aircraft engine maintenance", "MRO", "hangar", "jet engine");
+  }
+  if (/grev|strike|sendika|tisl/.test(base)) {
+    extra.push("aviation workers", "airport operations");
+  }
+  // Sonuç
+  return [topic, "aviation", "airport", ...extra].join(" ");
+}
+
+// —— Pexels araması (telifsiz) ——
+async function searchPexels(query: string, limit = 6) {
+  if (!PEXELS_API_KEY) return [];
+  const url = `https://api.pexels.com/v1/search?per_page=${limit}&query=${encodeURIComponent(query)}`;
+  const res = await fetch(url, { headers: { Authorization: PEXELS_API_KEY } });
+  if (!res.ok) return [];
+  const json = await res.json();
+  const photos = Array.isArray(json?.photos) ? json.photos : [];
+  return photos.map((p: any) => {
+    const src = p?.src || {};
+    const best =
+      src?.large2x || src?.large || src?.landscape || src?.medium || src?.original || src?.small || src?.portrait;
+    return {
+      id: String(p?.id ?? ""),
+      url: String(best || ""),
+      alt: String(p?.alt || query),
+      credit: String(p?.photographer || "Pexels"),
+      link: String(p?.url || ""),
+      width: Number(p?.width || 0) || undefined,
+      height: Number(p?.height || 0) || undefined,
+    };
+  }).filter((x: any) => x.url && x.url.startsWith("http"));
+}
+
 // —— Tek çağrı (v1), 404 olursa sıradaki modele geç ——
 async function callGeminiOnceWithFallback(prompt: string) {
   let lastErr: any;
@@ -231,7 +271,7 @@ export async function POST(req: NextRequest) {
         slug: toSlug(topic).slice(0, 120) || "haber",
         tags: ["Havacılık"],
         keywords: ["havacılık", "gündem"],
-        imageQuery: "airport aviation",
+        imageQuery: buildImageQuery(topic),
         images: [],
         html: `<h2>Özet</h2><p>${topic}</p>`,
       };
@@ -241,11 +281,18 @@ export async function POST(req: NextRequest) {
         const meta = stripTags(ensuredStub.html).slice(0, 160);
         ensuredStub.metaDesc = meta.replace(/\s+\S*$/, "");
       }
+      // — Görselleri doldur —
+      if (!ensuredStub.images || ensuredStub.images.length === 0) {
+        const q = ensuredStub.imageQuery || buildImageQuery(topic);
+        const pics = await searchPexels(q);
+        if (pics.length > 0) ensuredStub.images = pics;
+      }
       return Response.json({ ok: true, result: ensuredStub });
     }
 
     // 3) Tipleri zorla + 5+ paragraf garanti
     const coerced = coerceResult(parsedRaw);
+    if (!coerced.imageQuery) coerced.imageQuery = buildImageQuery(topic);
     let ensured = ensureMinParagraphsLocal(coerced, topic);
 
     // 4) Kullanıcı karakter limiti istediyse, akışı bozmadan kısalt
@@ -253,6 +300,13 @@ export async function POST(req: NextRequest) {
       ensured.html = compressHtml(ensured.html, maxChars);
       const meta = stripTags(ensured.html).slice(0, 160);
       ensured.metaDesc = meta.replace(/\s+\S*$/, "");
+    }
+
+    // 5) Görseller yoksa Pexels'ten otomatik doldur
+    if (!ensured.images || ensured.images.length === 0) {
+      const q = ensured.imageQuery || buildImageQuery(topic);
+      const pics = await searchPexels(q);
+      if (pics.length > 0) ensured.images = pics;
     }
 
     return Response.json({ ok: true, result: ensured });
