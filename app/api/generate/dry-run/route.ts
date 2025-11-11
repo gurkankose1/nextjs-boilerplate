@@ -8,6 +8,11 @@ const MODEL_CANDIDATES = ["gemini-2.5-flash", "gemini-2.0-flash"];
 
 export const runtime = "edge";
 
+// Retry/backoff ayarları
+const MAX_HTTP_RETRY = 3;       // toplam 3 deneme
+const BACKOFF_BASE_MS = 400;    // 400ms → 800ms → 1600ms (jitter ile)
+
+
 // ——— Env ———
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY as string;
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY as string | undefined;
@@ -35,6 +40,13 @@ function toSlug(s: string) {
     .replace(/ç/g,"c").replace(/ğ/g,"g").replace(/ı/g,"i").replace(/ö/g,"o").replace(/ş/g,"s").replace(/ü/g,"u")
     .replace(/[^a-z0-9\s-]/g,"").trim().replace(/\s+/g,"-").replace(/-+/g,"-");
 }
+function sleep(ms: number) {
+  return new Promise(res => setTimeout(res, ms));
+}
+function isTransientErr(msg: string) {
+  return /\b(503|UNAVAILABLE|timeout|aborted|overloaded|rate|quota|exceeded)\b/i.test(msg);
+}
+
 function isValidHttpUrl(u?: string) {
   if (!u) return false;
   try {
@@ -178,6 +190,30 @@ Konu: ${topic}
 
 SkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa ve uzun cümleleri dengeli kullan.`;
 }
+
+// — Tek çağrıyı retry/backoff ile sarmalayan üst seviye yardımcı —
+async function callGeminiWithRetry(prompt: string) {
+  let lastErr: any;
+  for (let i = 0; i < MAX_HTTP_RETRY; i++) {
+    try {
+      // model fallback’lı tek çağrı
+      return await callGeminiOnceWithFallback(prompt);
+    } catch (e: any) {
+      lastErr = e;
+      const msg = String(e?.message || e);
+      // sadece geçici hatalarda bekleyip tekrar dene
+      if (isTransientErr(msg) && i < MAX_HTTP_RETRY - 1) {
+        const jitter = Math.floor(Math.random() * 250);
+        const wait = BACKOFF_BASE_MS * Math.pow(2, i) + jitter; // 400, ~800, ~1600ms
+        await sleep(wait);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr || new Error("Unknown error");
+}
+
 
 // —— Entity tespiti (marka/tesis/konum) ——
 type EntityHints = { entity?: string; aliases: string[]; commonsQueries: string[]; stockQueries: string[]; };
@@ -422,7 +458,7 @@ export async function POST(req: NextRequest) {
     const topic = (input || "Güncel bir havacılık gündemi").trim().slice(0, 800);
 
     // 1) Model
-    const raw = await callGeminiOnceWithFallback(
+    const raw = await callGeminiWithRetry(
       `${SYSTEM}\n\nKonu: ${topic}\n\nSkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa ve uzun cümleleri dengeli kullan.`
     );
 
