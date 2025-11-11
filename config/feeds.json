@@ -1,0 +1,17 @@
+{
+  "airports": [
+    "https://www.aci.aero/feed/",
+    "https://www.heathrow.com/latest-news/rss" 
+  ],
+  "airlines": [
+    "https://newsroom.aviator.aero/rss/",
+    "https://simpleflying.com/feed/"
+  ],
+  "ground": [
+    "https://www.ghacdn.com/feed" 
+  ],
+  "authorities": [
+    "https://www.icao.int/Newsroom/_layouts/15/listfeed.aspx?List=78bd4f5e-db4a-44f1-8c64-7e0d2b3f3d2a",
+    "https://www.easa.europa.eu/en/newsroom-ands-events/rss.xml"
+  ]
+}
