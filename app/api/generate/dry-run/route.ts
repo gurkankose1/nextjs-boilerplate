@@ -318,7 +318,7 @@ async function searchUnsplash(query: string, limit = 6) {
     width: Number(r?.width || 0) || undefined,
     height: Number(r?.height || 0) || undefined,
     license: "Unsplash License"
-  })).filter(x => x.url && x.url.startsWith("http"));
+  })).filter((x: any) => x.url && x.url.startsWith("http"));
 }
 
 // —— Sorgu üretici ——
