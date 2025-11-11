@@ -1,16 +1,15 @@
 // app/api/generate/dry-run/route.ts
 import type { NextRequest } from "next/server";
 
-// —— Ücretsiz planda stabil “hızlı mod” — tek çağrı ——
-const FETCH_TIMEOUT_MS = 6500;          // tek model çağrısı azami 6.5 sn
-const MAX_TOKENS = 640;                 // kısa döndür, hız kazan
-const MODEL = "gemini-1.5-flash";       // hızlı ve ücretsizde daha stabil
+// —— Hızlı mod — tek çağrı — v1 endpoint — gerçek hata metnini göster ——
+const FETCH_TIMEOUT_MS = 9000;
+const MAX_TOKENS = 640;
+const MODEL = "gemini-1.5-flash";
 
-export const runtime = "edge";          // firebase-admin yok; Edge hızlı
+export const runtime = "edge";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY as string;
 
-// ==== Türler ====
 export type GenImage = {
   id?: string;
   url: string;
@@ -20,7 +19,6 @@ export type GenImage = {
   width?: number;
   height?: number;
 };
-
 export type GenResult = {
   seoTitle: string;
   metaDesc: string;
@@ -29,10 +27,9 @@ export type GenResult = {
   keywords: string[];
   imageQuery?: string;
   images: GenImage[];
-  html: string; // en az 5 paragraf
+  html: string;
 };
 
-// ==== Yardımcılar ====
 function toSlug(s: string) {
   return s
     .toLowerCase()
@@ -42,7 +39,6 @@ function toSlug(s: string) {
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-");
 }
-
 function countParagraphs(html: string): number {
   if (!html) return 0;
   const pTags = (html.match(/<p[\s>][\s\S]*?<\/p>/gi) || []).length;
@@ -54,15 +50,11 @@ function countParagraphs(html: string): number {
     .filter((x) => x.length > 120).length;
   return Math.max(pTags, splitByBr);
 }
-
 function safeJsonParse<T = any>(raw: string): T | null {
-  try {
-    return JSON.parse(raw);
-  } catch {
+  try { return JSON.parse(raw); } catch {
     const fenced = /```json([\s\S]*?)```/i.exec(raw)?.[1];
     if (fenced) { try { return JSON.parse(fenced); } catch {} }
-    const first = raw.indexOf("{");
-    const last = raw.lastIndexOf("}");
+    const first = raw.indexOf("{"); const last = raw.lastIndexOf("}");
     if (first >= 0 && last > first) {
       const cut = raw.slice(first, last + 1);
       try { return JSON.parse(cut); } catch {}
@@ -70,7 +62,6 @@ function safeJsonParse<T = any>(raw: string): T | null {
     return null;
   }
 }
-
 function coerceResult(obj: any): GenResult {
   const fallbackTitle = typeof obj?.seoTitle === "string" && obj.seoTitle.length > 3 ? obj.seoTitle : "SkyNews AI Haberi";
   const slug = toSlug(obj?.slug || fallbackTitle || "haber").slice(0, 140) || "haber";
@@ -83,24 +74,20 @@ function coerceResult(obj: any): GenResult {
     : [];
   const tags = Array.isArray(obj?.tags) ? obj.tags.map(String).slice(0, 8) : [];
   const keywords = Array.isArray(obj?.keywords) ? obj.keywords.map(String).slice(0, 16) : [];
-
   return {
     seoTitle: fallbackTitle,
-    metaDesc: typeof obj?.metaDesc === "string" ? obj.metaDesc.slice(140, 160) : (obj?.metaDesc || "Güncel havacılık haberi ve detaylar.").slice(0, 160),
-    slug,
-    tags,
-    keywords,
+    metaDesc: typeof obj?.metaDesc === "string" ? obj.metaDesc.slice(0,160) : "Güncel havacılık haberi ve detaylar.",
+    slug, tags, keywords,
     imageQuery: typeof obj?.imageQuery === "string" ? obj.imageQuery : undefined,
     images,
     html: typeof obj?.html === "string" ? obj.html : "",
-  } satisfies GenResult;
+  };
 }
 
-// ==== Sistem promtu ====
 const SYSTEM = `Sen SkyNews AI için deneyimli bir haber editörüsün. Çıktıyı mutlaka aşağıdaki JSON yapısında döndür.
 Kurallar:
 - Türkçe yaz; “AI” üslubundan kaçın.
-- html gövdesi en az 5 paragraf hedefle, <p> kullan; 1-2 adet <h2> alt başlık ekle.
+- html gövdesi 5+ paragraf hedefle, <p> kullan; 1-2 adet <h2> alt başlık ekle.
 - Abartısız, kaynaklara genel atıf yap (ör. “resmî açıklamaya göre…”).
 - seoTitle: 60–70 karakter, metaDesc: 140–160 karakter.
 - tags/keywords: Türkçe, havacılık odaklı.
@@ -117,14 +104,13 @@ JSON ŞEMASI:
 }
 Sadece TEK bir JSON döndür.`;
 
-// ==== Prompt ====
 function buildUserPrompt(topic: string) {
   return `Konu: ${topic}
 
-SkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa cümleler ve uzun cümleleri dengeli kullan.`;
+SkyNews okuru için tarafsız, teknik doğruluğu yüksek, SEO uyumlu bir içerik yaz. AI olduğu anlaşılmasın. Kısa ve uzun cümleleri dengeli kullan.`;
 }
 
-// ==== Gemini tek çağrı (timeout'lu) ====
+// ——— Tek çağrı ———
 async function callGeminiOnce(prompt: string) {
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }]}],
@@ -132,11 +118,11 @@ async function callGeminiOnce(prompt: string) {
     systemInstruction: { role: "system", parts: [{ text: SYSTEM }] },
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+  // v1 endpoint (v1beta yerine)
+  const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
   let res: Response;
   try {
     res = await fetch(url, {
@@ -150,8 +136,11 @@ async function callGeminiOnce(prompt: string) {
   }
 
   const text = await res.text();
+
+  // — Hata ise: statü + ham metni üst katmana gönder —
   if (!res.ok) {
-    throw new Error(`GEMINI_HTTP_${res.status}: ${text}`);
+    // Ör: 401/403 gibi durumları gizlemeyelim; ham gövdeyi iletelim
+    throw new Error(`HTTP ${res.status} ${res.statusText} :: ${text}`);
   }
 
   try {
@@ -163,12 +152,11 @@ async function callGeminiOnce(prompt: string) {
   }
 }
 
-// ==== 5+ paragrafı yerelde garanti et ====
+// 5+ paragrafı yerelde garanti et
 function ensureMinParagraphsLocal(parsed: GenResult, topic: string): GenResult {
   let html = parsed.html || "";
   const current = countParagraphs(html);
   if (current >= 5) return parsed;
-
   const need = 5 - current;
   const add = Array.from({ length: need }, (_, i) =>
     `<p>Bu paragraf, haber içeriğini tamamlamak ve bağlamı netleştirmek amacıyla otomatik olarak eklenmiştir. Konu: ${topic}. ${i + 1}. ek paragraf.</p>`
@@ -176,7 +164,6 @@ function ensureMinParagraphsLocal(parsed: GenResult, topic: string): GenResult {
   return { ...parsed, html: `${html}\n${add}` };
 }
 
-// ==== API ====
 export async function POST(req: NextRequest) {
   try {
     if (!GEMINI_API_KEY) {
@@ -186,13 +173,10 @@ export async function POST(req: NextRequest) {
     const { input } = (await req.json()) as { input?: string };
     const topic = (input || "Güncel bir havacılık gündemi").trim().slice(0, 800);
 
-    // 1) Tek model çağrısı
     const raw = await callGeminiOnce(buildUserPrompt(topic));
 
-    // 2) JSON parse sağlamlaştırma
     const parsedRaw = safeJsonParse(raw);
     if (!parsedRaw) {
-      // Model JSON vermezse: minimal “şablon”la boş dönme
       const stub: GenResult = {
         seoTitle: "SkyNews — Güncel gelişme",
         metaDesc: "Güncel havacılık haberi ve ayrıntılar.",
@@ -207,21 +191,23 @@ export async function POST(req: NextRequest) {
       return Response.json({ ok: true, result: ensuredStub });
     }
 
-    // 3) Tip zorla + 5+ paragrafı yerelde tamamla
     const coerced = coerceResult(parsedRaw);
     const ensured = ensureMinParagraphsLocal(coerced, topic);
-
     return Response.json({ ok: true, result: ensured });
+
   } catch (e: any) {
+    // ÖNEMLİ: “yoğunluk” demeden önce gerçek metni göster
     const msg = String(e?.message || e);
-    // Ağ/timeout/yoğunluk durumunda kullanıcıya anlaşılır mesaj
-    const isOverload = /GEMINI_HTTP_|timeout|AbortController|aborted|UNAVAILABLE|overloaded|quota|rate/i.test(msg);
+
+    // sadece gerçek “geçici” durumları yoğunluk say
+    const isTransient = /\b(503|UNAVAILABLE|overloaded|timeout|aborted)\b/i.test(msg);
+
     return Response.json({
       ok: false,
-      error: isOverload
-        ? "Gemini servisinde yoğunluk veya süre sınırı aşıldı. Tekrar deneyin."
-        : `Üretim başarısız: ${msg}`,
-      details: isOverload ? undefined : msg,
-    }, { status: isOverload ? 503 : 500 });
+      error: isTransient
+        ? "Gemini servisinde geçici bir sorun var. Tekrar deneyin."
+        : `Üretim başarısız: ${msg}`,  // 401/403/400 gibi asıl sebep burada görünür
+      details: msg,
+    }, { status: isTransient ? 503 : 500 });
   }
 }
