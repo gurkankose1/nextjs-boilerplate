@@ -1,17 +1,19 @@
 // app/api/cron/fetch/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb } from "../../../lib/firebaseAdmin";
 import crypto from "node:crypto";
+
+// feeds.json'u okuyalım (Node runtime’da fs ile)
 import fs from "node:fs/promises";
 
 type FeedConfig = {
-  airports?: string[];
-  airlines?: string[];
-  ground?: string[];
-  authorities?: string[];
+  airports: string[];
+  airlines: string[];
+  ground: string[];
+  authorities: string[];
 };
 
 function hash(s: string) {
@@ -22,7 +24,7 @@ function pick(text?: string) {
   return (text || "").replace(/<!\[CDATA\[|\]\]>/g, "").trim();
 }
 
-// Basit RSS/Atom item ayrıştırıcı
+// Ufak, bağımsız bir RSS/Atom ayıklama (regex tabanlı, basit)
 function parseItems(xml: string) {
   const items: { title: string; link: string; summary?: string }[] = [];
 
@@ -47,36 +49,38 @@ function parseItems(xml: string) {
     const href = (linkTag.match(/href="([^"]+)"/i) || [])[1] || "";
     const summary =
       pick(
-        (entry.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i) || [])[1] ||
-          (entry.match(/<content[^>]*>([\s\S]*?)<\/content>/i) || [])[1]
-      ) || undefined;
-
+        (entry.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i) || [])[1]
+      ) ||
+      pick(
+        (entry.match(/<content[^>]*>([\s\S]*?)<\/content>/i) || [])[1]
+      );
     if (title && href) items.push({ title, link: href, summary });
   }
 
   return items;
 }
 
-// CRON authorization (Vercel cron için)
-function ensureCronAuth(req: NextRequest) {
-  const auth =
-    req.headers.get("authorization") || req.headers.get("Authorization");
-  const expected = `Bearer ${process.env.CRON_SECRET}`;
-  if (!process.env.CRON_SECRET || auth !== expected) {
-    throw new Error("Unauthorized CRON");
-  }
-}
-
 export async function GET(req: NextRequest) {
   try {
-    ensureCronAuth(req);
+    // 🔐 CRON SECRET kontrolü — env varsa onu kullan, yoksa sabit fallback
+    const urlSecret = req.nextUrl.searchParams.get("secret");
+    const expectedSecret =
+      process.env.CRON_SECRET ||
+      "sk_cron_f04c2a1e-7e89-4a1b-9df5-3a70c9a61a32";
+
+    if (!urlSecret || urlSecret !== expectedSecret) {
+      return Response.json(
+        { ok: false, error: "Unauthorized CRON" },
+        { status: 401 }
+      );
+    }
 
     // feeds.json
     const buf = await fs.readFile(
       process.cwd() + "/config/feeds.json",
       "utf8"
     );
-    const feeds = JSON.parse(buf) as FeedConfig;
+    const feeds = JSON.parse(buf) as Partial<FeedConfig>;
     const groups = Object.entries(feeds);
 
     let added = 0;
@@ -92,13 +96,13 @@ export async function GET(req: NextRequest) {
           if (!r.ok) continue;
 
           const xml = await r.text();
-          const items = parseItems(xml).slice(0, 15); // her feed’den max 15
+          const items = parseItems(xml).slice(0, 15); // her feed’den en çok 15
 
           for (const it of items) {
             const key = hash((it.link || it.title).toLowerCase());
             const ref = adminDb.collection("ingest_queue").doc(key);
             const snap = await ref.get();
-            if (snap.exists) continue;
+            if (snap.exists) continue; // daha önce alınmış
 
             await ref.set({
               category,
@@ -108,18 +112,17 @@ export async function GET(req: NextRequest) {
               status: "pending",
               createdAt: new Date().toISOString(),
             });
-
             added++;
           }
         } catch {
-          // feed hatası → sessiz geç
+          // tek feed patlasa da diğerlerine devam et
         }
       }
     }
 
-    return NextResponse.json({ ok: true, added });
+    return Response.json({ ok: true, added });
   } catch (e: any) {
-    return NextResponse.json(
+    return Response.json(
       { ok: false, error: String(e?.message || e) },
       { status: 500 }
     );
