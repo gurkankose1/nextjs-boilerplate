@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { adminDb } from "../../../lib/firebaseAdmin";
+import { adminDb } from "@/lib/firebaseAdmin";
 import crypto from "node:crypto";
 
 // feeds.json'u okuyalım (Node runtime’da fs ile)
