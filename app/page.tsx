@@ -139,6 +139,7 @@ type HomePageProps = {
 
 export default async function HomePage({ searchParams }: HomePageProps) {
   const articles = await getLatestArticles();
+  const latestGundemMessages = await getLatestGundemMessages();
 
   const rawCategory = searchParams?.category;
 
