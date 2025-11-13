@@ -78,7 +78,7 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
 
   // Haberi çek
   useEffect(() => {
-    const id = articleId;
+    const id: string = articleId ?? "";
 
     if (!id) {
       setLoading(false);
