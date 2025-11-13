@@ -21,6 +21,16 @@ type ApiErr = {
   ok: false;
   error: string;
 };
+const BAD_WORDS = [
+  "küfür", // buraya istersen zamanla kendi listenle ekleme yaparsın
+  "salak",
+  "aptal",
+];
+
+function containsBadWords(text: string): boolean {
+  const lowered = text.toLowerCase();
+  return BAD_WORDS.some((w) => lowered && lowered.length > 0 && lowered.trim() && lowered && lowered !== "" && lowered.includes(w));
+}
 
 // Son 50 mesajı getir
 export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
