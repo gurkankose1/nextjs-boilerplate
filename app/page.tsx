@@ -16,6 +16,14 @@ type ArticleCard = {
   publishedAt?: string | null;
   views?: number | null;
 };
+type GundemMessagePreview = {
+  id: string;
+  displayName: string;
+  company: string | null;
+  message: string;
+  createdAt: string | null;
+};
+
 
 const CATEGORY_FILTERS = [
   { key: "all", label: "Tümü" },
@@ -94,6 +102,31 @@ async function getLatestArticles(limit = 40): Promise<ArticleCard[]> {
     };
   });
 }
+async function getLatestGundemMessages(
+  limit = 5
+): Promise<GundemMessagePreview[]> {
+  const snap = await adminDb
+    .collection("gundem_messages")
+    .where("status", "==", "visible")
+    .orderBy("createdAt", "desc")
+    .limit(limit)
+    .get();
+
+  return snap.docs.map((doc) => {
+    const data = doc.data() as Record<string, unknown>;
+
+    return {
+      id: doc.id,
+      displayName:
+        (data.displayName as string | undefined) || "Anonim kullanıcı",
+      company: (data.company as string | undefined) ?? null,
+      message: (data.message as string | undefined) || "",
+      createdAt:
+        typeof data.createdAt === "string" ? data.createdAt : null,
+    };
+  });
+}
+
 
 export const dynamic = "force-dynamic";
 
