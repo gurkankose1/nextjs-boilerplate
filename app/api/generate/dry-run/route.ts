@@ -331,7 +331,7 @@ ${input}
               : undefined,
           license: img?.license ? String(img.license) : undefined,
         }))
-        .filter((img) => img.url.length > 0)
+              .filter((img: GenImage) => img.url.length > 0)
     : [];
 
   const html = String(parsed.html || "").trim();
