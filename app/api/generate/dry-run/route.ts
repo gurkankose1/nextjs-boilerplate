@@ -5,28 +5,16 @@ export const runtime = "nodejs";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-if (!GEMINI_API_KEY) {
-  console.warn(
-    "[generate/dry-run] GEMINI_API_KEY env değişkeni tanımlı değil."
-  );
-}
-
-// Kategoriler ve editörler (senin tanımladıkların)
-const CATEGORY_EDITOR_MAP: Record<string, string> = {
+const CATEGORY_EDITOR_MAP = {
   airlines: "Metehan Özülkü",
   airports: "Kemal Kahraman",
   "ground-handling": "Hafife Kandemir",
   "military-aviation": "Musa Demirbilek",
   accidents: "Editör Ekibi",
-};
+  other: "Editör Ekibi",
+} as const;
 
-const CATEGORY_LABEL_MAP: Record<string, string> = {
-  airlines: "Havayolları",
-  airports: "Havalimanları",
-  "ground-handling": "Yer Hizmetleri",
-  accidents: "Uçak Kazaları",
-  "military-aviation": "Askeri Havacılık",
-};
+type CategoryKey = keyof typeof CATEGORY_EDITOR_MAP;
 
 type GenRequestBody = {
   input: string;
@@ -50,7 +38,7 @@ type GenResult = {
   slug: string;
   tags: string[];
   keywords: string[];
-  category: keyof typeof CATEGORY_LABEL_MAP | "other";
+  category: CategoryKey;
   editorName: string;
   imageQuery: string;
   images?: GenImage[];
@@ -83,10 +71,10 @@ function normaliseSlug(input: string): string {
     .slice(0, 120);
 }
 
-function pickCategoryFromKeywords(keywords: string[]): GenResult["category"] {
+function pickCategoryFromKeywords(keywords: string[]): CategoryKey {
   const joined = keywords.join(" ").toLowerCase();
 
-  const scores: Record<GenResult["category"], number> = {
+  const scores: Record<CategoryKey, number> = {
     airlines: 0,
     airports: 0,
     "ground-handling": 0,
@@ -95,7 +83,7 @@ function pickCategoryFromKeywords(keywords: string[]): GenResult["category"] {
     other: 0,
   };
 
-  const bump = (cat: GenResult["category"], amount = 1) => {
+  const bump = (cat: CategoryKey, amount = 1) => {
     scores[cat] += amount;
   };
 
@@ -113,7 +101,7 @@ function pickCategoryFromKeywords(keywords: string[]): GenResult["category"] {
 
   if (
     joined.match(
-      /\bairport\b|\bterminal\b|\bpier\b|\bstand\b|\bgate\b|\bhavalimanı\b|\bIGA\b|\bSAW\b|\bIST\b/
+      /\bairport\b|\bterminal\b|\bpier\b|\bstand\b|\bgate\b|\bhavalimanı\b|\biga\b|\bsaw\b|\bist\b/
     )
   ) {
     bump("airports", 2);
@@ -135,19 +123,18 @@ function pickCategoryFromKeywords(keywords: string[]): GenResult["category"] {
     bump("military-aviation", 2);
   }
 
-  let best: GenResult["category"] = "other";
+  let best: CategoryKey = "other";
   let bestScore = 0;
-  for (const [key, value] of Object.entries(scores)) {
-    if (value > bestScore) {
-      bestScore = value;
-      best = key as GenResult["category"];
+  (Object.entries(scores) as [CategoryKey, number][]).forEach(
+    ([cat, score]) => {
+      if (score > bestScore) {
+        bestScore = score;
+        best = cat;
+      }
     }
-  }
-  return bestScore > 0 ? best : "other";
-}
+  );
 
-function mapEditor(category: GenResult["category"]): string {
-  return CATEGORY_EDITOR_MAP[category] || "Editör Ekibi";
+  return best;
 }
 
 function buildSystemPrompt(): string {
@@ -157,115 +144,62 @@ Görevin: Sana verilen ham konu metninden (başlık + link + kısa özet) yola �
 SEO uyumlu, teknik olarak temiz, tarafsız ve profesyonel bir haberi JSON formatında üretmek.
 
 GENEL İLKELER:
-- DİL: 
-  - Haber dili kullan; abartılı, magazinsel veya sansasyonel ifade kullanma.
-  - "Biz", "ben", "yazar" gibi öznel ifadeler kullanma; tarafsız kal.
-  - Türkiye'deki havacılık sektörüne hakim, ciddi bir editör gibi yaz.
-- GERÇEKLİK:
-  - Haberde verilmeyen bir tarihi, rakamı, alıntıyı UYDURMA.
-  - Bilmiyorsan "netleşmedi", "paylaşılmadı" gibi ifadelerle açıkça belirt.
-- GÜVENLİK:
-  - Kazalar ve olaylarda spekülasyondan kaçın; resmi açıklamalar ve doğrulanmış bilgileri esas al.
+- Haber dili kullan; abartılı, magazinsel veya sansasyonel ifade kullanma.
+- "Biz", "ben", "yazar" gibi öznel ifadeler kullanma; tarafsız kal.
+- Haberde verilmeyen tarihleri, sayıları, alıntıları uydurma.
+- Kazalar ve olaylarda spekülasyondan kaçın; resmi açıklamalar netleşmeden kesin hüküm verme.
+- HTML gövdede en az 5 paragraf olsun (<p>...</p>).
 
-HTML GÖVDE (html alanı):
-- HTML mutlaka en az 5 paragraf içermelidir: <p>...</p>
-- Gereksiz <h1> kullanma; başlık zaten ayrı tutulacak.
-- Liste gerekiyorsa <ul>, <ol> kullanabilirsin ama ana akış paragraf olsun.
-- Kısa, okunabilir paragraflar tercih et.
+GREVLİK/MRO/TEKNİK HABERLERDE İLK 5 PARAGRAF:
+1) Sürecin seyri / tarihçe
+2) Talepler ve rakamlar
+3) İşverenin pozisyonu
+4) Olası etkiler / operasyonel yansımalar
+5) Sektörel bağlam / arka plan
 
-ÖZEL YAPI - GREV / MRO / TEKNİK HABERLER:
-Eğer haber;
-  - grev, toplu sözleşme, sendika, iş bırakma, iş yavaşlatma
-  - MRO, bakım merkezi, motor atölyesi, üs bakım, TEC, hangar işletmesi
-  - yer hizmetleri operasyonu, PBB, GPU, PCA, su servisi vb.
-ile ilgiliyse, ilk 5 paragrafı aşağıdaki kurguda yaz:
+KATEGORİLER:
+- "airlines"          → havayolları, filo, sefer, sipariş
+- "airports"          → havalimanı işletmesi, terminal, pist, apron, stand
+- "ground-handling"   → yer hizmetleri, PBB, GPU, PCA, pushback, bagaj operasyonu
+- "accidents"         → kaza, incident, emergency iniş, runway excursion
+- "military-aviation" → savaş uçakları, hava kuvvetleri, savunma projeleri
+- Kararsızsan "other" kullan.
 
-1) Sürecin seyri / tarihçe:
-   - Olayın veya sürecin nasıl başladığını, nerede ve ne zaman geliştiğini özetle.
-2) Talepler ve rakamlar:
-   - Varsa sendikanın veya tarafların talepleri, ücret oranları, filo büyüklüğü, uçuş sayıları vb.
-3) İşverenin pozisyonu:
-   - İlgili şirketin veya kurumun resmi açıklamasını, savunmasını veya tutumunu özetle.
-4) Olası etkiler / operasyonel yansımalar:
-   - Sefer iptalleri, rötarlar, kapasite düşüşü, apron / terminal operasyonuna etkiler.
-5) Sektörel bağlam / arka plan:
-   - Bu gelişmenin Türkiye ve dünya havacılığına, rekabete veya operasyonel standartlara olası yansımaları.
+EDİTÖR ATAMASI:
+- airlines          → "Metehan Özülkü"
+- airports          → "Kemal Kahraman"
+- ground-handling   → "Hafife Kandemir"
+- military-aviation → "Musa Demirbilek"
+- accidents / other → "Editör Ekibi"
 
-UÇAK KAZALARI / OLAYLAR:
-- Tonun sakin, saygılı ve spekülatif olmayan olsun.
-- Soruşturma aşamasındaysa, soruşturmanın sürdüğünü ve bulguların erken olabileceğini vurgula.
-- Kesin sebep açıklanmadıysa "kesin sebep henüz açıklanmadı" de; sen tahmin yürütme.
+SEO:
+- seoTitle: 55–70 karakter, Türkçe, net ve tıklanabilir ama clickbait değil.
+- metaDesc: 130–160 karakter, haberi özetleyen bir cümle.
+- slug: Türkçe karakterleri sadeleştir (ğ→g, ş→s, ı→i, ö→o, ü→u, ç→c), küçük harf, tire ile ayır.
 
-KATEGORİ VE EDITÖR:
-- Haber için aşağıdaki kategorilerden en uygunu seçilecek:
-  - "airlines"          → Havayolları
-  - "airports"          → Havalimanları
-  - "ground-handling"   → Yer Hizmetleri
-  - "accidents"         → Uçak Kazaları / Olaylar
-  - "military-aviation" → Askeri Havacılık
-- Kategoriyi belirlerken ana odak noktası neyse ona göre seç:
-  - Yeni hat, filo, sipariş, finansal karar → airlines
-  - Terminal, pist, apron, stand, slot, havalimanı işletmesi → airports
-  - PBB, GPU, PCA, pushback, bagaj, apron operasyonu, handling şirketleri → ground-handling
-  - Kaza, incident, ciddi olay, emercensi iniş, runway excursion vb. → accidents
-  - savaş uçakları, savunma projeleri, hava kuvvetleri, füze, askeri tatbikat → military-aviation
-- Her kategori için aşağıdaki isimlerden bir editör adı ata:
-  - airlines          → "Metehan Özülkü"
-  - airports          → "Kemal Kahraman"
-  - ground-handling   → "Hafife Kandemir"
-  - military-aviation → "Musa Demirbilek"
-  - accidents         → "Editör Ekibi"
-- Eğer kategori net belirlenemiyorsa "other" kullan ve editorName olarak "Editör Ekibi" ver.
+GÖRSEL:
+- imageQuery: İngilizce, marka adı içermeyen kısa görsel arama ifadesi (ör. "airport apron at night").
+- images: Eğer gerçek telifsiz görsel kaynağına referans veremiyorsan boş dizi [] döndür.
 
-SEO VE METAVERİ:
-- seoTitle:
-  - 55–70 karakter, Türkçe, net ve tıklanabilir ama clickbait olmayan bir başlık.
-  - Markaları ve önemli unsurları (ör: THY, IGA, SAW, Airbus A321neo vb.) içerebilir.
-- metaDesc:
-  - 130–160 karakter arası, haberi özetleyen akıcı bir cümle.
-- slug:
-  - Türkçe karakterleri sadeleştir (ğ→g, ş→s, ı→i, ö→o, ü→u, ç→c).
-  - Küçük harf ve tire ile ayır: "turkish-airlines-yeni-filo-planini-acikladi" gibi.
-  - Tarih veya saat ekleme; mümkün olduğunca kısa ve anlamlı tut.
-- tags:
-  - Maksimum 6 kısa etiket. Ör: ["THY", "filo planlaması", "geniş gövde"].
-- keywords:
-  - 5–12 adet SEO anahtar kelimesi. Ör: ["Turkish Airlines", "geniş gövde uçak", "filo yenileme", "İstanbul Havalimanı"].
-
-GÖRSEL SORGUSU (imageQuery, images):
-- imageQuery:
-  - Telifsiz görsel araması için, marka/logodan bağımsız KISA bir İngilizce arama ifadesi üret.
-  - Örnekler:
-    - "airport apron at night"
-    - "airline cabin crew walking in terminal"
-    - "cargo aircraft loading at airport"
-    - "air traffic control tower at sunset"
-  - THY, Pegasus, Emirates, Boeing, Airbus gibi marka isimlerini zorunlu değilse kullanma.
-- images:
-  - Eğer gerçek, telifsiz bir görsel kaynağına referans veremiyorsan boş bir dizi döndür: [].
-  - Eğer kurgu yapıyorsan, "url" sahte bir URL olmasın; o zaman da [] kullan.
-  - Bu alan backend tarafından Wikimedia Commons / Unsplash / Pexels sonuçlarıyla doldurulabilir.
-
-⚠️ ÇIKTI FORMATIN:
-- SADECE GEÇERLİ BİR JSON nesnesi döndür:
-  {
-    "seoTitle": string,
-    "metaDesc": string,
-    "slug": string,
-    "tags": string[],
-    "keywords": string[],
-    "category": "airlines" | "airports" | "ground-handling" | "accidents" | "military-aviation" | "other",
-    "editorName": string,
-    "imageQuery": string,
-    "images": GenImage[] (veya boş dizi),
-    "html": string
-  }
-- Kesinlikle açıklama, açıklayıcı metin, Markdown, ek metin YAZMA.
-- Sadece tek bir JSON obje döndür.
-  `.trim();
+ÇIKTI JSON FORMATIN:
+{
+  "seoTitle": string,
+  "metaDesc": string,
+  "slug": string,
+  "tags": string[],
+  "keywords": string[],
+  "category": "airlines" | "airports" | "ground-handling" | "accidents" | "military-aviation" | "other",
+  "editorName": string,
+  "imageQuery": string,
+  "images": GenImage[] (veya []),
+  "html": string
 }
 
-// Gemini REST çağrısı
+KESİNLİKLE:
+- Sadece tek bir JSON nesnesi döndür.
+- Açıklama, yorum, Markdown vb. ekleme.`;
+}
+
 async function callGeminiJSON(body: GenRequestBody): Promise<GenResult> {
   if (!GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY tanımlı değil");
@@ -275,8 +209,6 @@ async function callGeminiJSON(body: GenRequestBody): Promise<GenResult> {
 
   const model =
     fast === true ? "models/gemini-2.0-flash" : "models/gemini-2.5-flash";
-
-  const systemPrompt = buildSystemPrompt();
 
   const maxTokens =
     typeof maxChars === "number" && maxChars > 0
@@ -290,7 +222,7 @@ async function callGeminiJSON(body: GenRequestBody): Promise<GenResult> {
         parts: [
           {
             text:
-              systemPrompt +
+              buildSystemPrompt() +
               `
 
 HAM GİRDİ:
@@ -312,9 +244,7 @@ ${input}
 
   const resp = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
@@ -333,12 +263,10 @@ ${input}
     throw new Error("Gemini boş çıktı döndürdü.");
   }
 
-  // JSON'u güvenle ayıklamaya çalış
   let parsed: any;
   try {
     parsed = JSON.parse(textOutput);
   } catch {
-    // Metnin içinden JSON blok aramayı dene
     const match = textOutput.match(/\{[\s\S]*\}$/m);
     if (!match) {
       throw new Error("Gemini çıktısı JSON formatında değil.");
@@ -346,10 +274,9 @@ ${input}
     parsed = JSON.parse(match[0]);
   }
 
-  // Tipleri normalize et
   const seoTitle = String(parsed.seoTitle || "").trim();
   const metaDesc = String(parsed.metaDesc || "").trim();
-  const slugRaw: string = String(parsed.slug || seoTitle || "").trim();
+  const slugRaw = String(parsed.slug || seoTitle || "").trim();
   const slug = normaliseSlug(slugRaw || seoTitle || "havacilik-haberi");
 
   const tags: string[] = Array.isArray(parsed.tags)
@@ -357,13 +284,16 @@ ${input}
         .map((t: any) => String(t || "").trim())
         .filter((t: string) => t.length > 0)
     : [];
+
   const keywords: string[] = Array.isArray(parsed.keywords)
     ? parsed.keywords
         .map((t: any) => String(t || "").trim())
         .filter((t: string) => t.length > 0)
     : [];
 
-  let category: GenResult["category"] = parsed.category || "other";
+  let category: CategoryKey =
+    (parsed.category as CategoryKey) || "other";
+
   if (
     ![
       "airlines",
@@ -374,14 +304,13 @@ ${input}
       "other",
     ].includes(category)
   ) {
-    // LLM saçmalamışsa keywordlerden çıkar
     category = pickCategoryFromKeywords(keywords);
   }
 
   const editorName: string =
     parsed.editorName && typeof parsed.editorName === "string"
       ? parsed.editorName
-      : mapEditor(category);
+      : CATEGORY_EDITOR_MAP[category];
 
   const imageQuery: string =
     (parsed.imageQuery && String(parsed.imageQuery).trim()) ||
@@ -402,16 +331,16 @@ ${input}
               : undefined,
           license: img?.license ? String(img.license) : undefined,
         }))
-        .filter((img: GenImage) => img.url.length > 0)
+        .filter((img) => img.url.length > 0)
     : [];
 
-  const html: string = String(parsed.html || "").trim();
+  const html = String(parsed.html || "").trim();
 
   if (!seoTitle || !html) {
     throw new Error("Gemini çıktısı eksik: seoTitle veya html yok.");
   }
 
-  const result: GenResult = {
+  return {
     seoTitle,
     metaDesc,
     slug,
@@ -423,38 +352,18 @@ ${input}
     images,
     html,
   };
-
-  return result;
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const json = (await req.json()) as GenRequestBody;
+// Gemini çökerse bile boş dönmemek için fallback
+function fallbackFromInput(input: string): GenResult {
+  const firstLine = input.split("\n").map((s) => s.trim())[0] || "Havacılık Haberi";
+  const seoTitle =
+    firstLine.length > 70 ? firstLine.slice(0, 67) + "..." : firstLine;
 
-    if (!json || typeof json.input !== "string" || !json.input.trim()) {
-      return NextResponse.json(
-        { ok: false, error: "input alanı zorunludur." },
-        { status: 400 }
-      );
-    }
+  const metaDesc =
+    input.length > 150 ? input.slice(0, 147) + "..." : input;
 
-    const result = await callGeminiJSON(json);
+  const slug = normaliseSlug(seoTitle || "havacilik-haberi");
 
-    return NextResponse.json(
-      {
-        ok: true,
-        ...result,
-      },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    console.error("[generate/dry-run] error:", error);
-    return NextResponse.json(
-      {
-        ok: false,
-        error: String(error?.message || error || "Bilinmeyen hata"),
-      },
-      { status: 500 }
-    );
-  }
-}
+  const html =
+    "<p>
