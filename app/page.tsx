@@ -41,7 +41,7 @@ async function getLatestArticles(limit = 20): Promise<ArticleCard[]> {
 
     return {
       id: doc.id,
-      title: (data.title as string) || "SkyNews Haberi",
+      title: (data.title as string) || (data.seoTitle as string) || "SkyNews Haberi",
       slug: (data.slug as string) || doc.id,
       metaDesc: (data.metaDesc as string | undefined) ?? null,
       category: (data.category as string | undefined) ?? null,
@@ -50,20 +50,63 @@ async function getLatestArticles(limit = 20): Promise<ArticleCard[]> {
   });
 }
 
+// Kategori butonları için tanımlar
+const CATEGORY_FILTERS = [
+  { key: "all", label: "Tümü" },
+  { key: "turkish-aviation", label: "Türk Havacılığı" },
+  { key: "global-aviation", label: "Küresel Havacılık" },
+  { key: "mro-tech", label: "MRO & Teknik" },
+  { key: "airport-operations", label: "Havalimanı Operasyon" },
+  { key: "ground-handling", label: "Yer Hizmetleri" },
+  { key: "authorities", label: "Otoriteler" },
+] as const;
+
+const CATEGORY_LABEL_MAP: Record<string, string> = CATEGORY_FILTERS.reduce(
+  (acc, item) => {
+    if (item.key !== "all") {
+      acc[item.key] = item.label;
+    }
+    return acc;
+  },
+  {} as Record<string, string>
+);
+
 // Her request’te en güncel listeyi almak için
 export const dynamic = "force-dynamic";
 
-export default async function HomePage() {
+type HomePageProps = {
+  searchParams?: {
+    [key: string]: string | string[] | undefined;
+    category?: string;
+  };
+};
+
+export default async function HomePage({ searchParams }: HomePageProps) {
   const articles = await getLatestArticles();
 
-  const hero = articles[0];
-  const rest = articles.slice(1);
+  const rawCategory = searchParams?.category;
+  const validKeys = CATEGORY_FILTERS.map((c) => c.key);
+  const activeCategory =
+    typeof rawCategory === "string" && validKeys.includes(rawCategory)
+      ? rawCategory
+      : "all";
+
+  const filteredArticles =
+    activeCategory === "all"
+      ? articles
+      : articles.filter((article) => {
+          const cat = (article.category ?? "").toLowerCase();
+          return cat === activeCategory.toLowerCase();
+        });
+
+  const hero = filteredArticles[0];
+  const rest = filteredArticles.slice(1);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 px-4 py-8 md:px-8 lg:px-16">
       <div className="max-w-5xl mx-auto">
         {/* HEADER / BRAND BAR */}
-        <header className="mb-8 border-b border-slate-800 pb-4 flex items-baseline justify-between gap-4">
+        <header className="mb-6 border-b border-slate-800 pb-4 flex items-baseline justify-between gap-4">
           <div>
             <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
               SkyNews.Tr
@@ -77,11 +120,42 @@ export default async function HomePage() {
           </span>
         </header>
 
+        {/* KATEGORİ FİLTRE BAR */}
+        <nav className="mb-8 overflow-x-auto">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-800/80 min-w-max">
+            {CATEGORY_FILTERS.map((cat) => {
+              const isActive = activeCategory === cat.key;
+              const href =
+                cat.key === "all" ? "/" : `/?category=${encodeURIComponent(cat.key)}`;
+
+              return (
+                <Link
+                  key={cat.key}
+                  href={href}
+                  className={[
+                    "px-3 py-1.5 rounded-full text-xs whitespace-nowrap border transition",
+                    isActive
+                      ? "bg-sky-500 text-slate-950 border-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.45)]"
+                      : "bg-slate-900 border-slate-700 text-slate-300 hover:border-sky-400/80 hover:text-sky-100",
+                  ].join(" ")}
+                >
+                  {cat.label}
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+
         {/* HENÜZ HABER YOKSA */}
         {articles.length === 0 ? (
           <p className="text-slate-400">
             Henüz yayınlanmış haber yok. Studio &quot;Drafts&quot; bölümünden
             bir taslağı &quot;Publish&quot; ederek anasayfada görebilirsin.
+          </p>
+        ) : filteredArticles.length === 0 ? (
+          <p className="text-slate-400">
+            Bu kategoride henüz haber yok. Farklı bir kategori seçebilir veya
+            &quot;Tümü&quot; sekmesine dönebilirsin.
           </p>
         ) : (
           <>
@@ -102,7 +176,9 @@ export default async function HomePage() {
                   <div className="flex flex-wrap gap-3 items-center text-xs text-slate-400 mb-3">
                     {hero.category && (
                       <span className="px-2 py-1 rounded-full border border-slate-700/80">
-                        {hero.category}
+                        {CATEGORY_LABEL_MAP[hero.category] ??
+                          hero.category ??
+                          "Havacılık"}
                       </span>
                     )}
                     {hero.publishedAt && (
@@ -129,30 +205,37 @@ export default async function HomePage() {
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {rest.map((art) => (
-                    <Link
-                      key={art.id}
-                      href={`/news/${art.slug}`}
-                      className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 hover:border-sky-400/70 hover:bg-slate-900/80 transition flex flex-col gap-2"
-                    >
-                      <div className="text-xs text-sky-300/80">
-                        {art.category || "Havacılık"}
-                      </div>
-                      <h4 className="font-semibold leading-snug">
-                        {art.title}
-                      </h4>
-                      {art.metaDesc && (
-                        <p className="text-xs text-slate-300">
-                          {art.metaDesc}
-                        </p>
-                      )}
-                      {art.publishedAt && (
-                        <div className="mt-auto text-[11px] text-slate-500">
-                          {new Date(art.publishedAt).toLocaleString("tr-TR")}
+                  {rest.map((art) => {
+                    const catLabel =
+                      (art.category &&
+                        (CATEGORY_LABEL_MAP[art.category] ?? art.category)) ||
+                      "Havacılık";
+
+                    return (
+                      <Link
+                        key={art.id}
+                        href={`/news/${art.slug}`}
+                        className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 hover:border-sky-400/70 hover:bg-slate-900/80 transition flex flex-col gap-2"
+                      >
+                        <div className="text-xs text-sky-300/80">
+                          {catLabel}
                         </div>
-                      )}
-                    </Link>
-                  ))}
+                        <h4 className="font-semibold leading-snug">
+                          {art.title}
+                        </h4>
+                        {art.metaDesc && (
+                          <p className="text-xs text-slate-300">
+                            {art.metaDesc}
+                          </p>
+                        )}
+                        {art.publishedAt && (
+                          <div className="mt-auto text-[11px] text-slate-500">
+                            {new Date(art.publishedAt).toLocaleString("tr-TR")}
+                          </div>
+                        )}
+                      </Link>
+                    );
+                  })}
                 </div>
               </section>
             )}
