@@ -50,15 +50,14 @@ async function getLatestArticles(limit = 20): Promise<ArticleCard[]> {
   });
 }
 
-// Kategori butonları için tanımlar
+// Kategori butonları için tanımlar (iç anahtar + ekranda görünen isim)
 const CATEGORY_FILTERS = [
   { key: "all", label: "Tümü" },
-  { key: "turkish-aviation", label: "Türk Havacılığı" },
-  { key: "global-aviation", label: "Küresel Havacılık" },
-  { key: "mro-tech", label: "MRO & Teknik" },
-  { key: "airport-operations", label: "Havalimanı Operasyon" },
+  { key: "airlines", label: "Havayolları" },
+  { key: "airports", label: "Havalimanları" },
   { key: "ground-handling", label: "Yer Hizmetleri" },
-  { key: "authorities", label: "Otoriteler" },
+  { key: "accidents", label: "Uçak Kazaları" },
+  { key: "military-aviation", label: "Askeri Havacılık" },
 ] as const;
 
 type CategoryKey = (typeof CATEGORY_FILTERS)[number]["key"];
