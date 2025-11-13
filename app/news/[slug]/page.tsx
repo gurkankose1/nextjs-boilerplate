@@ -46,10 +46,15 @@ export const dynamic = "force-dynamic";
 export default async function ArticlePage({
   params,
 }: {
-  params: { slug: string };
+  params: { slug?: string };
 }) {
   try {
-    const slug = params.slug;
+    const slug = params?.slug;
+
+    // ❗ Güvenlik: slug yoksa veya "undefined" gibi saçma bir değer geldiyse
+    if (!slug || slug === "undefined" || slug === "null") {
+      return notFound();
+    }
 
     const snapshot = await adminDb
       .collection("articles")
@@ -177,7 +182,6 @@ export default async function ArticlePage({
       (err && err.message) ||
       (typeof err === "string" ? err : "Bilinmeyen hata");
 
-    // Hata olsa bile Next.js generic "Application error" yerine bu sayfa dönecek
     return (
       <main className="min-h-screen bg-slate-950 text-slate-50 px-4 py-8 md:px-8 lg:px-16">
         <div className="max-w-3xl mx-auto space-y-4">
@@ -186,7 +190,6 @@ export default async function ArticlePage({
           </h1>
           <p className="text-sm text-slate-400">
             Teknik bir sorun nedeniyle bu haberi şu anda görüntüleyemiyoruz.
-            Kısa süre içinde düzeltilecektir.
           </p>
           <details className="text-xs text-slate-500 border border-slate-700 rounded-md p-3">
             <summary>Hata detayı (geliştirme için)</summary>
