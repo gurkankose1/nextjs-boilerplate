@@ -108,25 +108,31 @@ async function getLatestGundemMessages(
 ): Promise<GundemMessagePreview[]> {
   const snap = await adminDb
     .collection("gundem_messages")
-    .where("status", "==", "visible")
     .orderBy("createdAt", "desc")
     .limit(limit)
     .get();
 
-  return snap.docs.map((doc) => {
-    const data = doc.data() as Record<string, unknown>;
+  return snap.docs
+    .map((doc) => {
+      const data = doc.data() as Record<string, unknown>;
 
-    return {
-      id: doc.id,
-      displayName:
-        (data.displayName as string | undefined) || "Anonim kullanıcı",
-      company: (data.company as string | undefined) ?? null,
-      message: (data.message as string | undefined) || "",
-      createdAt:
-        typeof data.createdAt === "string" ? data.createdAt : null,
-    };
-  });
+      // status alanı varsa ve "visible" değilse, listeye alma
+      const status = (data.status as string | undefined) ?? "visible";
+      if (status !== "visible") return null;
+
+      return {
+        id: doc.id,
+        displayName:
+          (data.displayName as string | undefined) || "Anonim kullanıcı",
+        company: (data.company as string | undefined) ?? null,
+        message: (data.message as string | undefined) || "",
+        createdAt:
+          typeof data.createdAt === "string" ? data.createdAt : null,
+      };
+    })
+    .filter((m): m is GundemMessagePreview => m !== null);
 }
+
 
 export const dynamic = "force-dynamic";
 
