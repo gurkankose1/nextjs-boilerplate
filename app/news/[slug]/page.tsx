@@ -78,7 +78,9 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
 
   // Haberi çek
   useEffect(() => {
-    if (!articleId) {
+    const id = articleId;
+
+    if (!id) {
       setLoading(false);
       setError("Geçersiz haber adresi (id parametresi eksik).");
       return;
@@ -91,7 +93,9 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
         setLoading(true);
         setError(null);
 
-        const res = await fetch(`/api/articles/get?id=${encodeURIComponent(articleId)}`);
+        const res = await fetch(
+          `/api/articles/get?id=${encodeURIComponent(id)}`
+        );
         const json: ApiOk | ApiErr = await res.json();
 
         if (cancelled) return;
@@ -123,7 +127,6 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
   // View sayacını artır
   useEffect(() => {
     if (!resolvedId) return;
-    // Sessiz artırma, hata olursa umursamıyoruz
     fetch("/api/articles/view", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -131,55 +134,57 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
     }).catch(() => {});
   }, [resolvedId]);
 
-  const { title, categoryLabel, editorName, publishedAtText, readingTime, heroImage } =
-    useMemo(() => {
-      if (!article) {
-        return {
-          title: "",
-          categoryLabel: "",
-          editorName: "",
-          publishedAtText: null as string | null,
-          readingTime: 1,
-          heroImage: null as ImageInfo | null,
-        };
-      }
-
-      const cat = article.category || "other";
-      const label = CATEGORY_LABEL_MAP[cat] || cat || "Havacılık";
-      const editor =
-        CATEGORY_EDITOR_MAP[cat] || "Editör Ekibi";
-
-      const html = article.html || article.body || "";
-      const rt = calculateReadingTime(html);
-
-      const publishedText =
-        formatDate(article.publishedAt || article.createdAt) || null;
-
-      const img =
-        (Array.isArray(article.images) ? article.images : []).find(
-          (x) => x && typeof x.url === "string"
-        ) || null;
-
-      const ttl =
-        article.title ||
-        article.seoTitle ||
-        "Havacılık Haberi";
-
+  const {
+    title,
+    categoryLabel,
+    editorName,
+    publishedAtText,
+    readingTime,
+    heroImage,
+  } = useMemo(() => {
+    if (!article) {
       return {
-        title: ttl,
-        categoryLabel: label,
-        editorName: editor,
-        publishedAtText: publishedText,
-        readingTime: rt,
-        heroImage: img,
+        title: "",
+        categoryLabel: "",
+        editorName: "",
+        publishedAtText: null as string | null,
+        readingTime: 1,
+        heroImage: null as ImageInfo | null,
       };
-    }, [article]);
+    }
+
+    const cat = article.category || "other";
+    const label = CATEGORY_LABEL_MAP[cat] || cat || "Havacılık";
+    const editor = CATEGORY_EDITOR_MAP[cat] || "Editör Ekibi";
+
+    const html = article.html || article.body || "";
+    const rt = calculateReadingTime(html);
+
+    const publishedText =
+      formatDate(article.publishedAt || article.createdAt) || null;
+
+    const img =
+      (Array.isArray(article.images) ? article.images : []).find(
+        (x) => x && typeof x.url === "string"
+      ) || null;
+
+    const ttl =
+      article.title || article.seoTitle || "Havacılık Haberi";
+
+    return {
+      title: ttl,
+      categoryLabel: label,
+      editorName: editor,
+      publishedAtText: publishedText,
+      readingTime: rt,
+      heroImage: img,
+    };
+  }, [article]);
 
   const cleanedHtml = useMemo(() => {
     if (!article) return "";
     const raw = article.html || article.body || "";
     if (!raw) return "";
-    // İstersen buraya stripAutoAdded vb. ekleyebiliriz.
     return raw;
   }, [article]);
 
@@ -224,9 +229,7 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
             <h1 className="text-xl font-semibold">
               Haber yüklenirken bir hata oluştu
             </h1>
-            <p className="text-sm text-slate-400">
-              {error}
-            </p>
+            <p className="text-sm text-slate-400">{error}</p>
             <Link
               href="/"
               className="inline-flex text-sm text-sky-300 hover:text-sky-200"
