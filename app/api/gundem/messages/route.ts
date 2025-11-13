@@ -37,12 +37,12 @@ function containsBadWords(text: string): boolean {
 // Son 50 mesajı getir
 export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
   try {
-    const snap = await adminDb
-      .collection("gundem_messages")
-      .where("status", "==", "visible")
-      .orderBy("createdAt", "desc")
-      .limit(50)
-      .get();
+   const snap = await adminDb
+  .collection("gundem_messages")
+  .orderBy("createdAt", "desc")
+  .limit(50)
+  .get();
+
 
     const messages: (MessageDoc & { id: string })[] = snap.docs.map((doc) => {
       const data = doc.data() as Record<string, unknown>;
