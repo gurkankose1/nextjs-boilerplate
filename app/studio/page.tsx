@@ -55,13 +55,40 @@ export default function StudioPage() {
   const logout = async () => { await signOut(auth); setAllowed(null); setUserEmail(null); };
 
   const generate = async () => {
-    setErr(null); setResult(null); setSavedId(null); setRunning(true);
+  setErr(null);
+  setResult(null);
+  setSavedId(null);
+  setRunning(true);
+
+  try {
+    const res = await fetch("/api/generate/dry-run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input,
+        maxChars: maxChars || undefined,
+        fast: true, // studio’dan hızlı mod: görsel olsa da olur, olmasa da
+      }),
+    });
+
+    const raw = await res.text();
+    let j: any;
+
     try {
-      const res = await fetch("/api/generate/dry-run", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        - body: JSON.stringify({ input, maxChars: maxChars || undefined }),
-+ body: JSON.stringify({ input, maxChars: maxChars || undefined, fast: true }),
-      });
+      j = JSON.parse(raw);
+    } catch {
+      throw new Error("API raw: " + raw.slice(0, 600));
+    }
+
+    if (!j.ok) throw new Error(j.error || "Üretim başarısız");
+    setResult(j.result as GenResult);
+  } catch (e: any) {
+    setErr(String(e?.message || e));
+  } finally {
+    setRunning(false);
+  }
+};
+
       const raw = await res.text();
       let j: any; try { j = JSON.parse(raw); } catch { throw new Error("API raw: " + raw.slice(0, 600)); }
       if (!j.ok) throw new Error(j.error || "Üretim başarısız");
