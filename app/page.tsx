@@ -194,6 +194,35 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             })}
           </div>
         </nav>
+{/* GÜNDEM HAVACILIK */}
+<section className="mb-8 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 md:px-6 md:py-5">
+  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+    <div>
+      <h2 className="text-sm font-semibold tracking-wide text-sky-300 uppercase">
+        Gündem Havacılık
+      </h2>
+      <p className="mt-1 text-sm text-slate-300 max-w-2xl">
+        Çalışanların sesi, havacılığın nabzı. Operasyon, vardiya düzeni,
+        şirket değerlendirmeleri ve sektör içi sohbetler bu alanda yer alacak.
+      </p>
+      <p className="mt-1 text-xs text-slate-500">
+        Lütfen kişisel haklara saygılı, yapıcı ve hukuka uygun bir dil kullanın.
+      </p>
+    </div>
+
+    <div className="flex flex-col items-start md:items-end gap-2">
+      <a
+        href="/gundem"
+        className="inline-flex items-center rounded-full border border-sky-500/70 bg-sky-500/10 px-4 py-1.5 text-xs font-medium text-sky-100 hover:bg-sky-500/20 transition"
+      >
+        Gündeme Katıl
+      </a>
+      <span className="text-[11px] text-slate-500">
+        Örnek: “TGS 2025 zamlarından memnun musunuz?”
+      </span>
+    </div>
+  </div>
+</section>
 
         {/* İÇERİK ALANI */}
         {articles.length === 0 ? (
