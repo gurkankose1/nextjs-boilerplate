@@ -366,4 +366,54 @@ function fallbackFromInput(input: string): GenResult {
   const slug = normaliseSlug(seoTitle || "havacilik-haberi");
 
   const html =
-    "<p>
+    "<p>" +
+    input
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join("</p><p>") +
+    "</p>";
+
+  return {
+    seoTitle,
+    metaDesc,
+    slug,
+    tags: [],
+    keywords: [],
+    category: "other",
+    editorName: CATEGORY_EDITOR_MAP.other,
+    imageQuery: "airport apron at night",
+    images: [],
+    html,
+  };
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const json = (await req.json()) as GenRequestBody;
+
+    if (!json || typeof json.input !== "string" || !json.input.trim()) {
+      return NextResponse.json(
+        { error: "input alanı zorunludur." },
+        { status: 400 }
+      );
+    }
+
+    let result: GenResult;
+    try {
+      result = await callGeminiJSON(json);
+    } catch (e) {
+      console.error("[generate/dry-run] Gemini hatası, fallback kullanılıyor:", e);
+      result = fallbackFromInput(json.input);
+    }
+
+    // ÖNEMLİ: Eski kontratla uyumlu — sadece alanları döndür, "ok" vb. yok
+    return NextResponse.json(result, { status: 200 });
+  } catch (error: any) {
+    console.error("[generate/dry-run] genel hata:", error);
+    return NextResponse.json(
+      { error: String(error?.message || error || "Bilinmeyen hata") },
+      { status: 500 }
+    );
+  }
+}
