@@ -400,12 +400,13 @@ export async function POST(req: NextRequest) {
     }
 
     // ŞİMDİLİK SADECE LOCAL FALLBACK KULLANIYORUZ, GEMINI YOK
-    const result = fallbackFromInput(json.input);
+     const result = fallbackFromInput(json.input);
 
+    // Studio, cevabı { ok: true, result: {...} } formatında bekliyor
     return NextResponse.json(
       {
         ok: true,
-        ...result,
+        result,
       },
       { status: 200 }
     );
