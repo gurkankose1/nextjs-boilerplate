@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb } from "../../../lib/firebaseAdmin";
 
 function baseUrlFrom(req: NextRequest) {
   const host =
@@ -18,7 +18,20 @@ function baseUrlFrom(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    // 1) Kuyruktan pending kayıtları çek
+    // 🔐 CRON SECRET kontrolü — env varsa onu kullan, yoksa sabit fallback
+    const urlSecret = req.nextUrl.searchParams.get("secret");
+    const expectedSecret =
+      process.env.CRON_SECRET ||
+      "sk_cron_f04c2a1e-7e89-4a1b-9df5-3a70c9a61a32";
+
+    if (!urlSecret || urlSecret !== expectedSecret) {
+      return Response.json(
+        { ok: false, error: "Unauthorized CRON" },
+        { status: 401 }
+      );
+    }
+
+    // 1) Kuyruktan N adet pending
     const q = await adminDb
       .collection("ingest_queue")
       .where("status", "==", "pending")
@@ -26,9 +39,7 @@ export async function GET(req: NextRequest) {
       .limit(5)
       .get();
 
-    if (q.empty) {
-      return Response.json({ ok: true, processed: 0 });
-    }
+    if (q.empty) return Response.json({ ok: true, processed: 0 });
 
     const origin = baseUrlFrom(req);
     let processed = 0;
@@ -40,7 +51,7 @@ export async function GET(req: NextRequest) {
       }`.trim();
 
       try {
-        // /api/generate/dry-run çağrısı
+        // 2) Generate (fast:false → görselleri de dene)
         const res = await fetch(`${origin}/api/generate/dry-run`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -70,7 +81,7 @@ export async function GET(req: NextRequest) {
           createdAt: new Date().toISOString(),
         });
 
-        // 4) Kuyruktaki kaydı güncelle
+        // 4) Kuyruğu kapat
         await doc.ref.update({
           status: "done",
           draftId: draftRef.id,
