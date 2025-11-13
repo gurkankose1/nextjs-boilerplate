@@ -16,6 +16,7 @@ type ArticleCard = {
   publishedAt?: string | null;
   views?: number | null;
 };
+
 type GundemMessagePreview = {
   id: string;
   displayName: string;
@@ -23,7 +24,6 @@ type GundemMessagePreview = {
   message: string;
   createdAt: string | null;
 };
-
 
 const CATEGORY_FILTERS = [
   { key: "all", label: "Tümü" },
@@ -102,6 +102,7 @@ async function getLatestArticles(limit = 40): Promise<ArticleCard[]> {
     };
   });
 }
+
 async function getLatestGundemMessages(
   limit = 5
 ): Promise<GundemMessagePreview[]> {
@@ -126,7 +127,6 @@ async function getLatestGundemMessages(
     };
   });
 }
-
 
 export const dynamic = "force-dynamic";
 
@@ -209,7 +209,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             {CATEGORY_FILTERS.map((cat) => {
               const isActive = activeCategory === cat.key;
               const href =
-                cat.key === "all" ? "/" : `/?category=${encodeURIComponent(cat.key)}`;
+                cat.key === "all"
+                  ? "/"
+                  : `/?category=${encodeURIComponent(cat.key)}`;
 
               return (
                 <Link
@@ -228,35 +230,79 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             })}
           </div>
         </nav>
-{/* GÜNDEM HAVACILIK */}
-<section className="mb-8 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 md:px-6 md:py-5">
-  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-    <div>
-      <h2 className="text-sm font-semibold tracking-wide text-sky-300 uppercase">
-        Gündem Havacılık
-      </h2>
-      <p className="mt-1 text-sm text-slate-300 max-w-2xl">
-        Çalışanların sesi, havacılığın nabzı. Operasyon, vardiya düzeni,
-        şirket değerlendirmeleri ve sektör içi sohbetler bu alanda yer alacak.
-      </p>
-      <p className="mt-1 text-xs text-slate-500">
-        Lütfen kişisel haklara saygılı, yapıcı ve hukuka uygun bir dil kullanın.
-      </p>
-    </div>
 
-    <div className="flex flex-col items-start md:items-end gap-2">
-      <a
-        href="/gundem"
-        className="inline-flex items-center rounded-full border border-sky-500/70 bg-sky-500/10 px-4 py-1.5 text-xs font-medium text-sky-100 hover:bg-sky-500/20 transition"
-      >
-        Gündeme Katıl
-      </a>
-      <span className="text-[11px] text-slate-500">
-        Örnek: “TGS 2025 zamlarından memnun musunuz?”
-      </span>
-    </div>
-  </div>
-</section>
+        {/* GÜNDEM HAVACILIK BLOĞU */}
+        <section className="mt-4 mb-4 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 md:px-6 md:py-5">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold tracking-wide text-sky-300 uppercase">
+                  Gündem Havacılık
+                </h2>
+                <p className="mt-1 text-sm text-slate-300 max-w-2xl">
+                  Çalışanların sesi, havacılığın nabzı. Şirketler, çalışma
+                  koşulları, vardiya düzeni, sosyal haklar ve daha fazlası
+                  hakkında deneyimlerini paylaş; sektörde olup bitenleri
+                  birlikte tartışalım.
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Lütfen kişisel haklara saygılı, yapıcı ve hukuka uygun bir dil
+                  kullanın. Hakaret, iftira veya kişisel saldırı içeren
+                  paylaşımlar yayından kaldırılacaktır.
+                </p>
+              </div>
+
+              <div className="flex flex-col items-start md:items-end gap-2">
+                <Link
+                  href="/gundem"
+                  className="inline-flex items-center rounded-full border border-sky-500/70 bg-sky-500/10 px-4 py-1.5 text-xs font-medium text-sky-100 hover:bg-sky-500/20 transition"
+                >
+                  Gündeme Katıl
+                </Link>
+                <span className="text-[11px] text-slate-500 text-right">
+                  Örnek: “TGS 2025 zamlarından memnun musunuz?”, “IGA yemek
+                  hizmetleri nasıl?”
+                </span>
+              </div>
+            </div>
+
+            {latestGundemMessages.length > 0 && (
+              <div className="border-t border-slate-800/80 pt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] text-slate-400">
+                    Son yorumlar
+                  </span>
+                  <Link
+                    href="/gundem"
+                    className="text-[11px] text-sky-300 hover:text-sky-200 transition"
+                  >
+                    Tümünü gör
+                  </Link>
+                </div>
+                <ul className="space-y-1.5">
+                  {latestGundemMessages.map((m) => (
+                    <li
+                      key={m.id}
+                      className="text-[11px] text-slate-200 flex gap-2"
+                    >
+                      <span className="font-semibold text-sky-300">
+                        {m.displayName}
+                        {m.company ? (
+                          <span className="text-slate-400">
+                            {" "}
+                            · {m.company}
+                          </span>
+                        ) : null}
+                        :
+                      </span>
+                      <span className="line-clamp-1">{m.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* İÇERİK ALANI */}
         {articles.length === 0 ? (
