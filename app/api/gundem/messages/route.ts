@@ -44,20 +44,26 @@ export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
   .get();
 
 
-    const messages: (MessageDoc & { id: string })[] = snap.docs.map((doc) => {
-      const data = doc.data() as Record<string, unknown>;
+   const messages: (MessageDoc & { id: string })[] = snap.docs
+  .map((doc) => {
+    const data = doc.data() as Record<string, unknown>;
 
-      return {
-        id: doc.id,
-        displayName:
-          (data.displayName as string | undefined) || "Anonim kullanıcı",
-        company: (data.company as string | undefined) ?? null,
-        message: (data.message as string | undefined) || "",
-        createdAt:
-          (data.createdAt as string | undefined) ||
-          new Date().toISOString(),
-      };
-    });
+    const status = (data.status as string | undefined) ?? "visible";
+    if (status !== "visible") return null;
+
+    return {
+      id: doc.id,
+      displayName:
+        (data.displayName as string | undefined) || "Anonim kullanıcı",
+      company: (data.company as string | undefined) ?? null,
+      message: (data.message as string | undefined) || "",
+      createdAt:
+        (data.createdAt as string | undefined) ||
+        new Date().toISOString(),
+    };
+  })
+  .filter((m): m is MessageDoc & { id: string } => m !== null);
+
 
     return NextResponse.json(
       {
