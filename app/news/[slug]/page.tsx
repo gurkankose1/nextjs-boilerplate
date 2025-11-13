@@ -1,7 +1,39 @@
 // app/news/[slug]/page.tsx
-import { adminDb } from "@/lib/firebaseAdmin";
-import { notFound } from "next/navigation";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+
+type ImageInfo = {
+  url: string;
+  alt?: string;
+  credit?: string;
+};
+
+type ArticleData = {
+  id?: string;
+  title?: string;
+  seoTitle?: string;
+  html?: string;
+  body?: string;
+  category?: string;
+  metaDesc?: string;
+  publishedAt?: string | null;
+  createdAt?: string | null;
+  images?: ImageInfo[];
+};
+
+type ApiOk = {
+  ok: true;
+  id: string;
+  article: ArticleData;
+};
+
+type ApiErr = {
+  ok: false;
+  error: string;
+};
 
 const CATEGORY_EDITOR_MAP: Record<string, string> = {
   airlines: "Metehan Özülkü",
@@ -19,17 +51,7 @@ const CATEGORY_LABEL_MAP: Record<string, string> = {
   "military-aviation": "Askeri Havacılık",
 };
 
-function toIsoString(v: any) {
-  if (!v) return null;
-  if (typeof v?.toDate === "function") return v.toDate().toISOString();
-  if (v instanceof Date) return v.toISOString();
-  if (typeof v === "string") {
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString();
-  }
-  return null;
-}
-
+// Okuma süresi (dakika)
 function calculateReadingTime(html: string) {
   if (!html) return 1;
   const text = html.replace(/<[^>]+>/g, " ");
@@ -38,204 +60,234 @@ function calculateReadingTime(html: string) {
   return minutes;
 }
 
-export const dynamic = "force-dynamic";
-
-type ArticlePageProps = {
-  params: { slug: string };
-  searchParams?: { [key: string]: string | string[] | undefined };
-};
-
-export default async function ArticlePage({ params, searchParams }: ArticlePageProps) {
-  try {
-    const slug = params?.slug;
-    const idParam =
-      typeof searchParams?.id === "string" ? searchParams.id : undefined;
-
-    if (!slug || slug === "undefined" || slug === "null") {
-      return notFound();
-    }
-
-    let docSnap: FirebaseFirestore.DocumentSnapshot | null = null;
-
-    // 1) Eğer URL'de id geldiyse, önce onunla çek (en sağlam yöntem)
-    if (idParam) {
-      const byId = await adminDb.collection("articles").doc(idParam).get();
-      if (byId.exists) {
-        docSnap = byId;
-      }
-    }
-
-    // 2) id ile bulunamadıysa slug alanına göre ara
-    if (!docSnap) {
-      const snap = await adminDb
-        .collection("articles")
-        .where("slug", "==", slug)
-        .limit(1)
-        .get();
-
-      if (!snap.empty) {
-        docSnap = snap.docs[0];
-      }
-    }
-
-    // 3) Hâlâ yoksa gerçekten 404
-    if (!docSnap) {
-      return notFound();
-    }
-
-    const data: any = docSnap.data() ?? {};
-
-    const html: string =
-      typeof data.html === "string"
-        ? data.html
-        : typeof data.body === "string"
-        ? data.body
-        : "";
-
-    const title: string =
-      (typeof data.title === "string" && data.title) ||
-      (typeof data.seoTitle === "string" && data.seoTitle) ||
-      "Havacılık Haberi";
-
-    const category: string =
-      (typeof data.category === "string" && data.category) || "other";
-
-    const publishedAt: string | null =
-      toIsoString(data.publishedAt) || toIsoString(data.createdAt);
-
-    const rawImages: any[] = Array.isArray(data.images) ? data.images : [];
-    const images = rawImages.filter(
-      (img) => img && typeof img.url === "string"
-    );
-
-    const readingTime = calculateReadingTime(html);
-    const editorName =
-      CATEGORY_EDITOR_MAP[category] || "Editör Ekibi";
-    const categoryLabel =
-      CATEGORY_LABEL_MAP[category] || category || "Havacılık";
-
-    return (
-      <main className="min-h-screen bg-slate-950 text-slate-50 px-4 py-8 md:px-8 lg:px-16">
-        <div className="max-w-4xl mx-auto space-y-8">
-          {/* Breadcrumbs */}
-          <nav className="text-xs text-slate-400 flex items-center gap-2">
-            <Link href="/" className="hover:text-sky-300 transition">
-              Ana Sayfa
-            </Link>
-            <span>/</span>
-            <Link
-              href={`/?category=${encodeURIComponent(category)}`}
-              className="hover:text-sky-300 transition"
-            >
-              {categoryLabel}
-            </Link>
-            <span>/</span>
-            <span className="text-slate-500 line-clamp-1">
-              {title}
-            </span>
-          </nav>
-
-          {/* Başlık */}
-          <header className="space-y-3">
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight leading-snug">
-              {title}
-            </h1>
-
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
-              <span className="px-2 py-1 rounded-full border border-slate-700/80">
-                {categoryLabel}
-              </span>
-              {publishedAt && (
-                <span>
-                  {new Date(publishedAt).toLocaleString("tr-TR")}
-                </span>
-              )}
-              <span>{readingTime} dk okuma</span>
-              <span>Yazar: {editorName}</span>
-            </div>
-          </header>
-
-          {/* Kapak Görseli */}
-          {images.length > 0 && (
-            <div className="rounded-xl overflow-hidden border border-slate-800 shadow-md">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={images[0].url}
-                alt={images[0].alt || title}
-                className="w-full max-h-[420px] object-cover"
-              />
-              {images[0].credit && (
-                <div className="text-[10px] text-slate-500 px-3 py-2 bg-slate-900 border-t border-slate-800">
-                  {images[0].credit}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Haber İçeriği */}
-          {html ? (
-            <article
-              className="prose prose-invert max-w-none prose-p:leading-relaxed prose-headings:text-sky-300"
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
-          ) : (
-            <p className="text-sm text-slate-400">
-              Bu haber henüz tam metinle güncellenmedi. Kısa süre içinde
-              editörlerimiz içeriği tamamlayacak.
-            </p>
-          )}
-
-          {/* Görüntüleme sayacı */}
-          <ViewCounter articleId={docSnap.id} />
-        </div>
-      </main>
-    );
-  } catch (err: any) {
-    const message =
-      (err && err.message) ||
-      (typeof err === "string" ? err : "Bilinmeyen hata");
-
-    return (
-      <main className="min-h-screen bg-slate-950 text-slate-50 px-4 py-8 md:px-8 lg:px-16">
-        <div className="max-w-3xl mx-auto space-y-4">
-          <h1 className="text-xl font-semibold">
-            Haber yüklenirken bir hata oluştu
-          </h1>
-          <p className="text-sm text-slate-400">
-            Teknik bir sorun nedeniyle bu haberi şu anda görüntüleyemiyoruz.
-          </p>
-          <details className="text-xs text-slate-500 border border-slate-700 rounded-md p-3">
-            <summary>Hata detayı (geliştirme için)</summary>
-            <pre className="mt-2 whitespace-pre-wrap break-words">
-              {message}
-            </pre>
-          </details>
-          <Link
-            href="/"
-            className="inline-flex text-sm text-sky-300 hover:text-sky-200"
-          >
-            ← Ana sayfaya dön
-          </Link>
-        </div>
-      </main>
-    );
-  }
+function formatDate(value?: string | null) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("tr-TR");
 }
 
-function ViewCounter({ articleId }: { articleId: string }) {
+export default function ArticlePage({ params }: { params: { slug: string } }) {
+  const searchParams = useSearchParams();
+  const articleId = searchParams.get("id") || undefined;
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [article, setArticle] = useState<ArticleData | null>(null);
+  const [resolvedId, setResolvedId] = useState<string | null>(null);
+
+  // Haberi çek
+  useEffect(() => {
+    if (!articleId) {
+      setLoading(false);
+      setError("Geçersiz haber adresi (id parametresi eksik).");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const res = await fetch(`/api/articles/get?id=${encodeURIComponent(articleId)}`);
+        const json: ApiOk | ApiErr = await res.json();
+
+        if (cancelled) return;
+
+        if (!json.ok) {
+          setError(json.error || "Haber bulunamadı.");
+          setArticle(null);
+          setLoading(false);
+          return;
+        }
+
+        setArticle(json.article);
+        setResolvedId(json.id);
+        setLoading(false);
+      } catch (e: any) {
+        if (cancelled) return;
+        setError("Haber yüklenirken bir hata oluştu.");
+        setLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [articleId]);
+
+  // View sayacını artır
+  useEffect(() => {
+    if (!resolvedId) return;
+    // Sessiz artırma, hata olursa umursamıyoruz
+    fetch("/api/articles/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: resolvedId }),
+    }).catch(() => {});
+  }, [resolvedId]);
+
+  const { title, categoryLabel, editorName, publishedAtText, readingTime, heroImage } =
+    useMemo(() => {
+      if (!article) {
+        return {
+          title: "",
+          categoryLabel: "",
+          editorName: "",
+          publishedAtText: null as string | null,
+          readingTime: 1,
+          heroImage: null as ImageInfo | null,
+        };
+      }
+
+      const cat = article.category || "other";
+      const label = CATEGORY_LABEL_MAP[cat] || cat || "Havacılık";
+      const editor =
+        CATEGORY_EDITOR_MAP[cat] || "Editör Ekibi";
+
+      const html = article.html || article.body || "";
+      const rt = calculateReadingTime(html);
+
+      const publishedText =
+        formatDate(article.publishedAt || article.createdAt) || null;
+
+      const img =
+        (Array.isArray(article.images) ? article.images : []).find(
+          (x) => x && typeof x.url === "string"
+        ) || null;
+
+      const ttl =
+        article.title ||
+        article.seoTitle ||
+        "Havacılık Haberi";
+
+      return {
+        title: ttl,
+        categoryLabel: label,
+        editorName: editor,
+        publishedAtText: publishedText,
+        readingTime: rt,
+        heroImage: img,
+      };
+    }, [article]);
+
+  const cleanedHtml = useMemo(() => {
+    if (!article) return "";
+    const raw = article.html || article.body || "";
+    if (!raw) return "";
+    // İstersen buraya stripAutoAdded vb. ekleyebiliriz.
+    return raw;
+  }, [article]);
+
   return (
-    <script
-      dangerouslySetInnerHTML={{
-        __html: `
-          try {
-            fetch('/api/articles/view', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: '${articleId}' })
-            }).catch(() => {});
-          } catch (e) {}
-        `,
-      }}
-    />
+    <main className="min-h-screen bg-slate-950 text-slate-50 px-4 py-8 md:px-8 lg:px-16">
+      <div className="max-w-4xl mx-auto space-y-8">
+        {/* Breadcrumbs */}
+        <nav className="text-xs text-slate-400 flex items-center gap-2">
+          <Link href="/" className="hover:text-sky-300 transition">
+            Ana Sayfa
+          </Link>
+          {categoryLabel && (
+            <>
+              <span>/</span>
+              <span className="text-slate-500">{categoryLabel}</span>
+            </>
+          )}
+          {title && (
+            <>
+              <span>/</span>
+              <span className="text-slate-500 line-clamp-1">{title}</span>
+            </>
+          )}
+        </nav>
+
+        {/* Yükleniyor / Hata Durumu */}
+        {loading && (
+          <div className="space-y-3">
+            <div className="h-8 w-2/3 bg-slate-800/60 rounded animate-pulse" />
+            <div className="h-4 w-1/3 bg-slate-800/60 rounded animate-pulse" />
+            <div className="h-64 w-full bg-slate-900/60 rounded-xl animate-pulse" />
+            <div className="space-y-2">
+              <div className="h-4 w-full bg-slate-900/60 rounded animate-pulse" />
+              <div className="h-4 w-5/6 bg-slate-900/60 rounded animate-pulse" />
+              <div className="h-4 w-4/6 bg-slate-900/60 rounded animate-pulse" />
+            </div>
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="space-y-3">
+            <h1 className="text-xl font-semibold">
+              Haber yüklenirken bir hata oluştu
+            </h1>
+            <p className="text-sm text-slate-400">
+              {error}
+            </p>
+            <Link
+              href="/"
+              className="inline-flex text-sm text-sky-300 hover:text-sky-200"
+            >
+              ← Ana sayfaya dön
+            </Link>
+          </div>
+        )}
+
+        {!loading && !error && article && (
+          <>
+            {/* Başlık */}
+            <header className="space-y-3">
+              <h1 className="text-3xl md:text-4xl font-semibold tracking-tight leading-snug">
+                {title}
+              </h1>
+
+              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+                {categoryLabel && (
+                  <span className="px-2 py-1 rounded-full border border-slate-700/80">
+                    {categoryLabel}
+                  </span>
+                )}
+                {publishedAtText && <span>{publishedAtText}</span>}
+                <span>{readingTime} dk okuma</span>
+                <span>Yazar: {editorName}</span>
+              </div>
+            </header>
+
+            {/* Kapak Görseli */}
+            {heroImage && (
+              <div className="rounded-xl overflow-hidden border border-slate-800 shadow-md">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={heroImage.url}
+                  alt={heroImage.alt || title}
+                  className="w-full max-h-[420px] object-cover"
+                />
+                {heroImage.credit && (
+                  <div className="text-[10px] text-slate-500 px-3 py-2 bg-slate-900 border-t border-slate-800">
+                    {heroImage.credit}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Gövde */}
+            {cleanedHtml ? (
+              <article
+                className="prose prose-invert max-w-none prose-p:leading-relaxed prose-headings:text-sky-300"
+                dangerouslySetInnerHTML={{ __html: cleanedHtml }}
+              />
+            ) : (
+              <p className="text-sm text-slate-400">
+                Bu haber henüz tam metinle güncellenmedi. Kısa süre içinde
+                editörlerimiz içeriği tamamlayacak.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </main>
   );
 }
