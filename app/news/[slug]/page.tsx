@@ -51,22 +51,29 @@ export default async function ArticlePage({
   try {
     const slug = params?.slug;
 
-    // ❗ Güvenlik: slug yoksa veya "undefined" gibi saçma bir değer geldiyse
+    // slug yoksa ya da saçma değer geldiyse direkt 404
     if (!slug || slug === "undefined" || slug === "null") {
       return notFound();
     }
 
-    const snapshot = await adminDb
+    // 1) Önce slug alanına göre ara
+    let snapshot = await adminDb
       .collection("articles")
       .where("slug", "==", slug)
       .limit(1)
       .get();
 
-    if (snapshot.empty) {
-      return notFound();
+    let doc = snapshot.docs[0] ?? null;
+
+    // 2) Eğer slug alanından bulamazsak, doc.id ile dene
+    if (!doc) {
+      const byId = await adminDb.collection("articles").doc(slug).get();
+      if (!byId.exists) {
+        return notFound();
+      }
+      doc = byId as any;
     }
 
-    const doc = snapshot.docs[0];
     const data: any = doc.data() ?? {};
 
     const html: string =
