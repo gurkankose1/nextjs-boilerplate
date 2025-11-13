@@ -399,21 +399,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let result: GenResult;
+    // ŞİMDİLİK SADECE LOCAL FALLBACK KULLANIYORUZ, GEMINI YOK
+    const result = fallbackFromInput(json.input);
 
-    try {
-      // Önce Gemini'yi dene
-      result = await callGeminiJSON(json);
-    } catch (e) {
-      // Gemini patlarsa fallback'e düş
-      console.error(
-        "[generate/dry-run] Gemini hatası, fallback kullanılıyor:",
-        e
-      );
-      result = fallbackFromInput(json.input);
-    }
-
-    // Studio'nun beklediği format: ok: true + alanlar
     return NextResponse.json(
       {
         ok: true,
@@ -432,4 +420,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
 
