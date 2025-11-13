@@ -394,26 +394,42 @@ export async function POST(req: NextRequest) {
 
     if (!json || typeof json.input !== "string" || !json.input.trim()) {
       return NextResponse.json(
-        { error: "input alanı zorunludur." },
-        { status: 400 }
+        { ok: false, error: "input alanı zorunludur." },
+        { status: 200 }
       );
     }
 
     let result: GenResult;
+
     try {
+      // Önce Gemini'yi dene
       result = await callGeminiJSON(json);
     } catch (e) {
-      console.error("[generate/dry-run] Gemini hatası, fallback kullanılıyor:", e);
+      // Gemini patlarsa fallback'e düş
+      console.error(
+        "[generate/dry-run] Gemini hatası, fallback kullanılıyor:",
+        e
+      );
       result = fallbackFromInput(json.input);
     }
 
-    // ÖNEMLİ: Eski kontratla uyumlu — sadece alanları döndür, "ok" vb. yok
-    return NextResponse.json(result, { status: 200 });
+    // Studio'nun beklediği format: ok: true + alanlar
+    return NextResponse.json(
+      {
+        ok: true,
+        ...result,
+      },
+      { status: 200 }
+    );
   } catch (error: any) {
     console.error("[generate/dry-run] genel hata:", error);
     return NextResponse.json(
-      { error: String(error?.message || error || "Bilinmeyen hata") },
-      { status: 500 }
+      {
+        ok: false,
+        error: String(error?.message || error || "Bilinmeyen hata"),
+      },
+      { status: 200 }
     );
   }
 }
+
