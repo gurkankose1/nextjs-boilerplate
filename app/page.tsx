@@ -116,7 +116,6 @@ async function getLatestGundemMessages(
     .map((doc) => {
       const data = doc.data() as Record<string, unknown>;
 
-      // status alanı varsa ve "visible" değilse, listeye alma
       const status = (data.status as string | undefined) ?? "visible";
       if (status !== "visible") return null;
 
@@ -132,7 +131,6 @@ async function getLatestGundemMessages(
     })
     .filter((m): m is GundemMessagePreview => m !== null);
 }
-
 
 export const dynamic = "force-dynamic";
 
@@ -237,79 +235,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </nav>
 
-        {/* GÜNDEM HAVACILIK BLOĞU */}
-        <section className="mt-4 mb-4 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-4 md:px-6 md:py-5">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold tracking-wide text-sky-300 uppercase">
-                  Gündem Havacılık
-                </h2>
-                <p className="mt-1 text-sm text-slate-300 max-w-2xl">
-                  Çalışanların sesi, havacılığın nabzı. Şirketler, çalışma
-                  koşulları, vardiya düzeni, sosyal haklar ve daha fazlası
-                  hakkında deneyimlerini paylaş; sektörde olup bitenleri
-                  birlikte tartışalım.
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Lütfen kişisel haklara saygılı, yapıcı ve hukuka uygun bir dil
-                  kullanın. Hakaret, iftira veya kişisel saldırı içeren
-                  paylaşımlar yayından kaldırılacaktır.
-                </p>
-              </div>
-
-              <div className="flex flex-col items-start md:items-end gap-2">
-                <Link
-                  href="/gundem"
-                  className="inline-flex items-center rounded-full border border-sky-500/70 bg-sky-500/10 px-4 py-1.5 text-xs font-medium text-sky-100 hover:bg-sky-500/20 transition"
-                >
-                  Gündeme Katıl
-                </Link>
-                <span className="text-[11px] text-slate-500 text-right">
-                  Örnek: “TGS 2025 zamlarından memnun musunuz?”, “IGA yemek
-                  hizmetleri nasıl?”
-                </span>
-              </div>
-            </div>
-
-            {latestGundemMessages.length > 0 && (
-              <div className="border-t border-slate-800/80 pt-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] text-slate-400">
-                    Son yorumlar
-                  </span>
-                  <Link
-                    href="/gundem"
-                    className="text-[11px] text-sky-300 hover:text-sky-200 transition"
-                  >
-                    Tümünü gör
-                  </Link>
-                </div>
-                <ul className="space-y-1.5">
-                  {latestGundemMessages.map((m) => (
-                    <li
-                      key={m.id}
-                      className="text-[11px] text-slate-200 flex gap-2"
-                    >
-                      <span className="font-semibold text-sky-300">
-                        {m.displayName}
-                        {m.company ? (
-                          <span className="text-slate-400">
-                            {" "}
-                            · {m.company}
-                          </span>
-                        ) : null}
-                        :
-                      </span>
-                      <span className="line-clamp-1">{m.message}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </section>
-
         {/* İÇERİK ALANI */}
         {articles.length === 0 ? (
           <p className="text-slate-400">
@@ -323,7 +248,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </p>
         ) : (
           <div className="lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] lg:gap-8 lg:items-start">
-            {/* SOL KOLON: HERO + LİSTE */}
+            {/* SOL KOLON: HERO + LİSTE + GÜNDEM */}
             <div className="space-y-8 mb-8 lg:mb-0">
               {/* HERO KART */}
               {hero && (
@@ -424,6 +349,50 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                       );
                     })}
                   </div>
+                </section>
+              )}
+
+              {/* GÜNDEM HAVACILIK – KOMPAKT BLOK */}
+              {latestGundemMessages.length > 0 && (
+                <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <h3 className="text-xs font-semibold tracking-[0.18em] text-sky-300 uppercase">
+                        Gündem Havacılık
+                      </h3>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Çalışanların sesi, havacılığın nabzı. Son yorumlardan
+                        öne çıkanlar:
+                      </p>
+                    </div>
+                    <Link
+                      href="/gundem"
+                      className="text-[11px] text-sky-300 hover:text-sky-200 border border-sky-500/60 rounded-full px-3 py-1 ml-2"
+                    >
+                      Gündeme Katıl
+                    </Link>
+                  </div>
+
+                  <ul className="space-y-1.5">
+                    {latestGundemMessages.map((m) => (
+                      <li
+                        key={m.id}
+                        className="text-[11px] text-slate-200 flex gap-2"
+                      >
+                        <span className="font-semibold text-sky-300">
+                          {m.displayName}
+                          {m.company ? (
+                            <span className="text-slate-400">
+                              {" "}
+                              · {m.company}
+                            </span>
+                          ) : null}
+                          :
+                        </span>
+                        <span className="line-clamp-1">{m.message}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </section>
               )}
             </div>
