@@ -1,365 +1,291 @@
 // app/gundem/page.tsx
-"use client";
-
-import { useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
+import { adminDb } from "@/lib/firebaseAdmin";
 
-type PollOption = {
-  id: string;
-  label: string;
-};
-
-type Message = {
+type GundemMessage = {
   id: string;
   displayName: string;
-  company: string | null;
+  company?: string | null;
   message: string;
   createdAt: string | null;
 };
 
-type ApiListOk = {
-  ok: true;
-  messages: Message[];
-};
+const SITE_NAME =
+  process.env.NEXT_PUBLIC_SITE_NAME && process.env.NEXT_PUBLIC_SITE_NAME.trim()
+    ? process.env.NEXT_PUBLIC_SITE_NAME
+    : "SkyNews.Tr";
 
-type ApiErr = {
-  ok: false;
-  error: string;
-};
+export const revalidate = 30;
 
-const DAILY_POLL_QUESTION =
-  "2025 için açıklanan zam oranlarından genel olarak memnun musunuz?";
+async function getLatestMessages(): Promise<GundemMessage[]> {
+  const snap = await adminDb
+    .collection("gundem_messages")
+    .orderBy("createdAt", "desc")
+    .limit(50)
+    .get();
 
-const DAILY_POLL_OPTIONS: PollOption[] = [
-  { id: "very-happy", label: "Evet, oldukça memnunum" },
-  { id: "ok", label: "Kısmen memnunum" },
-  { id: "not-happy", label: "Hayır, memnun değilim" },
-  { id: "no-comment", label: "Fikrim yok / Kararsızım" },
-];
-
-export default function GundemPage() {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [pollSubmitted, setPollSubmitted] = useState(false);
-
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [messageError, setMessageError] = useState<string | null>(null);
-
-  const [displayName, setDisplayName] = useState("");
-  const [company, setCompany] = useState("");
-  const [messageText, setMessageText] = useState("");
-  const [sending, setSending] = useState(false);
-
-  // Mesajları yükle
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadMessages = async () => {
-      try {
-        setLoadingMessages(true);
-        setMessageError(null);
-
-        const res = await fetch("/api/gundem/messages", {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        const json: ApiListOk | ApiErr = await res.json();
-
-        if (cancelled) return;
-
-        if (!json.ok) {
-          setMessageError(json.error || "Mesajlar yüklenemedi.");
-        } else {
-          setMessages(json.messages);
-        }
-      } catch (err: any) {
-        if (cancelled) return;
-        setMessageError(
-          "Mesajlar yüklenirken beklenmeyen bir hata oluştu."
-        );
-      } finally {
-        if (!cancelled) {
-          setLoadingMessages(false);
-        }
-      }
+  return snap.docs.map((doc) => {
+    const data = doc.data() || {};
+    return {
+      id: doc.id,
+      displayName: data.displayName || "Anonim",
+      company: data.company || null,
+      message: data.message || "",
+      createdAt: data.createdAt || null,
     };
+  });
+}
 
-    loadMessages();
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("tr-TR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-    // 30 saniyede bir listeyi tazele (hafif polling)
-    const interval = setInterval(loadMessages, 30000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
-
-  const handleVoteSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!selected || pollSubmitted) return;
-    // İLERDE: Firestore'a oy kaydı
-    setPollSubmitted(true);
-  };
-
-  const handleMessageSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!messageText.trim() || sending) return;
-
-    try {
-      setSending(true);
-      setMessageError(null);
-
-      const res = await fetch("/api/gundem/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          displayName: displayName.trim() || "Anonim kullanıcı",
-          company: company.trim() || null,
-          message: messageText.trim(),
-        }),
-      });
-
-      const json: ApiListOk | ApiErr = await res.json();
-
-      if (!json.ok) {
-        setMessageError(json.error || "Mesaj gönderilemedi.");
-      } else {
-        setMessages(json.messages);
-        setMessageText("");
-      }
-    } catch (err: any) {
-      setMessageError("Mesaj gönderilirken bir hata oluştu.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const formatDate = (iso: string | null): string => {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString("tr-TR");
-  };
+export default async function GundemPage() {
+  const messages = await getLatestMessages();
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-50 px-4 py-8 md:px-8 lg:px-16">
-      <div className="max-w-5xl mx-auto space-y-8">
-        {/* Breadcrumb */}
-        <nav className="text-xs text-slate-400 flex items-center gap-2">
-          <Link href="/" className="hover:text-sky-300 transition">
-            Ana Sayfa
-          </Link>
-          <span>/</span>
-          <span className="text-slate-500">Gündem Havacılık</span>
-        </nav>
+    <main className="min-h-screen bg-slate-950 text-slate-50">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-6 lg:flex-row">
+        {/* SOL: Gündem akışı */}
+        <section className="flex-1 space-y-4">
+          <header className="border-b border-slate-800 pb-4 mb-2">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-sky-400 mb-1">
+              Gündem Havacılık
+            </p>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">
+              {SITE_NAME} okurlarının buluşma noktası
+            </h1>
+            <p className="mt-1 text-xs text-slate-400 sm:text-sm">
+              Ramp, kule, yer hizmetleri, teknik, kabin, operasyon… Havacılığın
+              nabzını tutan herkes burada. Gündemi konuşun, deneyim paylaşın,
+              soru sorun, dertleşin.
+            </p>
+          </header>
 
-        {/* Başlık */}
-        <header className="space-y-3">
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
-            Gündem Havacılık
-          </h1>
-          <p className="text-sm md:text-base text-slate-300 max-w-3xl">
-            Bu alan, havacılık çalışanlarının sesi olmak için tasarlandı.
-            Havalimanları, havayolları, yer hizmetleri, yükleme ekipleri,
-            operasyon, planlama, vardiya düzeni, sosyal haklar, yemek ve
-            servis gibi konularda deneyimlerini paylaşabilir, gündemi
-            tartışabilir ve sektörde nelerin iyileştirilmesi gerektiğine
-            birlikte ışık tutabiliriz.
-          </p>
-          <p className="text-xs text-slate-500 max-w-3xl">
-            Not: Lütfen paylaşımlarınızda kişi isimleri, TC kimlik numarası,
-            telefon gibi kişisel veriler paylaşmayın. Marka ve kurumlar
-            eleştirilebilir; ancak hakaret, iftira, tehdit ve kişisel
-            saldırılar kesinlikle kabul edilmez. Gerekli görülen içerikler
-            yayından kaldırılabilir.
-          </p>
-        </header>
+          {/* Mesaj yazma alanı – şimdilik pasif tasarım */}
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-slate-100">
+                Gündeme mesaj bırak
+              </h2>
+              <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-400">
+                Yakında aktif olacak
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mb-3">
+              Bu alan şu an sadece tasarım amacıyla pasif. Bir sonraki adımda
+              burayı /api/gundem/messages endpoint&apos;ine bağlayıp gerçek
+              zamanlı mesaj göndermeyi etkinleştireceğiz.
+            </p>
 
-        {/* Ana grid: SOL = sohbet, SAĞ = anket */}
-        <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)]">
-          {/* SOL: Gündem Chat */}
-          <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 md:p-5 space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-sky-300 uppercase tracking-wide">
-                Çalışanların Gündemi (Sohbet)
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] mb-3">
+              <div className="space-y-2">
+                <label className="block">
+                  <span className="text-[11px] text-slate-300">
+                    Rumuz / Görünecek isim
+                  </span>
+                  <input
+                    type="text"
+                    disabled
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-400 placeholder:text-slate-600 cursor-not-allowed"
+                    placeholder="Örn: Rampçı34, ATCspotter..."
+                  />
+                </label>
+              </div>
+              <div className="space-y-2">
+                <label className="block">
+                  <span className="text-[11px] text-slate-300">
+                    Şirket / Birim (opsiyonel)
+                  </span>
+                  <input
+                    type="text"
+                    disabled
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-400 placeholder:text-slate-600 cursor-not-allowed"
+                    placeholder="Örn: Yer Hizmeti, ATC, Hava yolu, Teknik..."
+                  />
+                </label>
+              </div>
+            </div>
+
+            <label className="block mb-3">
+              <span className="text-[11px] text-slate-300">
+                Mesajın (gündemi, yaşadığın olayı, sorunu, fikrini yaz)
+              </span>
+              <textarea
+                rows={4}
+                disabled
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-400 placeholder:text-slate-600 cursor-not-allowed resize-none"
+                placeholder="Bu alan bir sonraki adımda aktif olacak. Gündemde ne varsa yazabileceksin..."
+              />
+            </label>
+
+            <button
+              type="button"
+              disabled
+              className="inline-flex items-center justify-center rounded-full border border-slate-700 bg-slate-800/80 px-4 py-2 text-[11px] font-semibold text-slate-400 cursor-not-allowed"
+            >
+              Mesaj gönder • Çok yakında
+            </button>
+
+            <p className="mt-2 text-[10px] text-slate-500">
+              Kurallar: Kişisel hedef gösterme, hakaret, küfür, ifşa ve ticari
+              reklam içerikleri yayına alınmaz; moderasyon ekibi dilediği
+              mesajı saklı tutma / silme hakkını kullanır.
+            </p>
+          </section>
+
+          {/* Mesaj listesi */}
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-slate-100">
+                Son mesajlar
               </h2>
               <span className="text-[11px] text-slate-500">
-                Son 50 mesaj gösterilir
+                Toplam {messages.length} mesaj gösteriliyor
               </span>
             </div>
 
-            {/* Mesaj gönderme formu */}
-            <form
-              onSubmit={handleMessageSubmit}
-              className="space-y-3 border border-slate-800/80 rounded-lg bg-slate-950/40 p-3"
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">
-                    Görünecek isim (takma ad)
-                  </label>
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Örn: Apron Şefi, TGS Yükleme, Hava Trafikçi"
-                    className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-sky-400"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">
-                    Kurum / Birim (isteğe bağlı)
-                  </label>
-                  <input
-                    type="text"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    placeholder="Örn: TGS, Havaş, IGA, THY Teknik..."
-                    className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-sky-400"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] text-slate-400">
-                  Mesajınız
-                </label>
-                <textarea
-                  value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
-                  rows={3}
-                  placeholder="Sektörle ilgili düşüncelerinizi, yaşadığınız sorunları veya iyi uygulama örneklerini paylaşabilirsiniz."
-                  className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-sky-400 resize-y"
-                />
-              </div>
-
-              {messageError && (
-                <p className="text-[11px] text-rose-400">{messageError}</p>
-              )}
-
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] text-slate-500">
-                  Mesajlar editörler tarafından geriye dönük olarak
-                  incelenebilir. Hukuka aykırı içerikler silinebilir.
-                </p>
-                <button
-                  type="submit"
-                  disabled={sending || !messageText.trim()}
-                  className="inline-flex items-center rounded-full bg-sky-500/90 px-4 py-1.5 text-[11px] font-semibold text-slate-950 disabled:opacity-60 disabled:cursor-not-allowed hover:bg-sky-400 transition"
-                >
-                  {sending ? "Gönderiliyor..." : "Mesajı paylaş"}
-                </button>
-              </div>
-            </form>
-
-            {/* Mesaj listesi */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
-                  Son mesajlar
-                </h3>
-                {loadingMessages && (
-                  <span className="text-[10px] text-slate-500">
-                    Yükleniyor...
-                  </span>
-                )}
-              </div>
-
-              {messageError && !sending && (
-                <p className="text-xs text-rose-400">{messageError}</p>
-              )}
-
-              <div className="mt-1 max-h-[420px] overflow-y-auto space-y-2 pr-1">
-                {messages.length === 0 && !loadingMessages ? (
-                  <p className="text-xs text-slate-500">
-                    Henüz mesaj yok. İlk paylaşımı yapan sen olabilirsin.
-                  </p>
-                ) : (
-                  messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className="rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs space-y-1"
-                    >
-                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className="font-semibold text-sky-300">
+            {messages.length === 0 ? (
+              <p className="text-xs text-slate-400">
+                Henüz Gündem Havacılık&apos;a mesaj gelmemiş. İlk yorumu sen
+                yazacaksın – birazdan bu alanı aktif edeceğiz.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {messages.map((msg) => (
+                  <li
+                    key={msg.id}
+                    className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2.5"
+                  >
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <div className="flex flex-col">
+                        <span className="text-[11px] font-semibold text-sky-300">
                           {msg.displayName}
+                          {msg.company ? (
+                            <span className="text-slate-400">
+                              {" "}
+                              · {msg.company}
+                            </span>
+                          ) : null}
                         </span>
-                        {msg.company && (
-                          <span className="px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-slate-300 text-[10px]">
-                            {msg.company}
-                          </span>
-                        )}
-                        {msg.createdAt && (
-                          <span className="text-slate-500 ml-auto text-[10px]">
-                            {formatDate(msg.createdAt)}
-                          </span>
-                        )}
                       </div>
-                      <p className="text-slate-100 whitespace-pre-wrap">
-                        {msg.message}
-                      </p>
+                      {msg.createdAt && (
+                        <span className="text-[10px] text-slate-500 whitespace-nowrap">
+                          {formatDate(msg.createdAt)}
+                        </span>
+                      )}
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
+                    <p className="text-[11px] leading-relaxed text-slate-100 whitespace-pre-line">
+                      {msg.message}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
+        </section>
 
-          {/* SAĞ: Günlük Anket */}
-          <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 md:p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-emerald-300 uppercase tracking-wide">
-              Günün Anketi
+        {/* SAĞ: Haftanın Anketi + Bilgi kutuları */}
+        <aside className="w-full max-w-xs shrink-0 space-y-4 lg:max-w-sm">
+          {/* Haftanın Anketi - daha geniş versiyon */}
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+            <h2 className="text-sm uppercase tracking-[0.18em] text-slate-300 mb-1">
+              Haftanın Anketi
             </h2>
-            <p className="text-sm text-slate-200">{DAILY_POLL_QUESTION}</p>
+            <p className="text-[11px] text-slate-400 mb-3">
+              Bu sayfada gördüğün anket tasarımı şu an sahte verilerle
+              çalışıyor. Bir sonraki adımda burayı /api/polls/active ve
+              /api/polls/vote endpoint&apos;lerine bağlayacağız.
+            </p>
 
-            <form className="space-y-3" onSubmit={handleVoteSubmit}>
-              {DAILY_POLL_OPTIONS.map((opt) => (
+            <p className="text-xs font-medium text-slate-100 mb-3">
+              Sizce şu anda Türkiye&apos;de havacılık sektörünü en çok zorlayan
+              başlık hangisi?
+            </p>
+
+            <form className="space-y-1.5">
+              {[
+                "Slot / kapasite kısıtları",
+                "Personel planlama ve vardiya yükü",
+                "Bakım / teknik operasyon maliyetleri",
+                "Regülasyon ve otorite süreçleri",
+              ].map((opt, i) => (
                 <label
-                  key={opt.id}
-                  className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer"
+                  key={i}
+                  className="flex items-center gap-2 text-[11px] text-slate-200"
                 >
                   <input
                     type="radio"
-                    name="daily-poll"
-                    value={opt.id}
-                    checked={selected === opt.id}
-                    onChange={() => setSelected(opt.id)}
-                    className="h-3 w-3 accent-emerald-400"
+                    name="weekly-poll-gundem-preview"
+                    className="h-3 w-3 rounded border-slate-600 bg-slate-900"
+                    disabled
                   />
-                  <span>{opt.label}</span>
+                  <span>{opt}</span>
                 </label>
               ))}
 
               <button
-                type="submit"
-                disabled={!selected || pollSubmitted}
-                className="mt-2 inline-flex items-center rounded-full bg-emerald-500/90 px-4 py-1.5 text-xs font-semibold text-slate-950 disabled:opacity-60 disabled:cursor-not-allowed hover:bg-emerald-400 transition"
+                type="button"
+                disabled
+                className="mt-2 w-full rounded-full bg-slate-800 text-[11px] font-semibold text-slate-400 py-2 border border-slate-700 cursor-not-allowed"
               >
-                {pollSubmitted ? "Oy kullanıldı" : "Oylamaya katıl"}
+                Yakında oy kullanabileceksiniz
               </button>
             </form>
 
-            {pollSubmitted && (
-              <p className="text-xs text-emerald-300">
-                Teşekkürler! Bu anketin sonuçlarını ileride “haftalık anket
-                sonuçları” başlığıyla anasayfada yayınlayacağız.
-              </p>
-            )}
-
-            <p className="text-[11px] text-slate-500">
-              İLERİ AŞAMA: Anketler Firestore&apos;a{" "}
-              <code className="bg-slate-800 px-1 rounded">polls</code> ve{" "}
-              <code className="bg-slate-800 px-1 rounded">
-                poll_votes
-              </code>{" "}
-              koleksiyonları olarak kaydedilecek. Anketler hafta başında
-              başlayıp hafta sonunda kapanacak ve sonuçlar haber formatında
-              paylaşılacak.
+            <p className="mt-3 text-[10px] text-slate-500">
+              Haftalık anket sonuçları, her hafta sonu otomatik olarak haber
+              formatında yayımlanacak:{" "}
+              <span className="text-sky-300">
+                “Haftalık Anket Sonuçları – [Soru]”
+              </span>
+              .
             </p>
           </section>
-        </div>
+
+          {/* Bilgi kutusu: Gündem kuralları */}
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+            <h3 className="text-xs font-semibold text-slate-100 mb-1">
+              Kısa kurallar
+            </h3>
+            <ul className="space-y-1.5 text-[11px] text-slate-400">
+              <li>• Kişi ve kurum isimleri hedef gösterilmez.</li>
+              <li>• Küfür, hakaret ve ifşa içeren mesajlar yayına alınmaz.</li>
+              <li>
+                • Operasyonel sır sayılabilecek hassas bilgiler paylaşılmaz.
+              </li>
+              <li>
+                • Moderasyon ekibi, gerekli gördüğü mesajları saklama / silme
+                hakkına sahiptir.
+              </li>
+            </ul>
+          </section>
+
+          {/* Bilgi kutusu: Ana sayfaya dönüş */}
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+            <h3 className="text-xs font-semibold text-slate-100 mb-1">
+              Ana sayfaya dön
+            </h3>
+            <p className="text-[11px] text-slate-400 mb-2">
+              Gündemi okuduktan sonra, editörlü havacılık haberlerine devam
+              etmek için ana sayfaya dönebilirsin.
+            </p>
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center rounded-full border border-sky-500/60 bg-sky-500/10 px-4 py-1.5 text-[11px] font-semibold text-sky-200 hover:bg-sky-500/20 transition"
+            >
+              Ana sayfaya dön
+            </Link>
+          </section>
+        </aside>
       </div>
     </main>
   );
