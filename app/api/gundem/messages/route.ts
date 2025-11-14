@@ -37,33 +37,31 @@ function containsBadWords(text: string): boolean {
 // Son 50 mesajı getir
 export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
   try {
-   const snap = await adminDb
-  .collection("gundem_messages")
-  .orderBy("createdAt", "desc")
-  .limit(50)
-  .get();
+      const snap = await adminDb
+      .collection("gundem_messages")
+      .orderBy("createdAt", "desc")
+      .limit(50)
+      .get();
 
+    const messages: (MessageDoc & { id: string })[] = snap.docs
+      .map((doc) => {
+        const data = doc.data() as Record<string, unknown>;
 
-   const messages: (MessageDoc & { id: string })[] = snap.docs
-  .map((doc) => {
-    const data = doc.data() as Record<string, unknown>;
+        const status = (data.status as string | undefined) ?? "visible";
+        if (status !== "visible") return null;
 
-    const status = (data.status as string | undefined) ?? "visible";
-    if (status !== "visible") return null;
-
-    return {
-      id: doc.id,
-      displayName:
-        (data.displayName as string | undefined) || "Anonim kullanıcı",
-      company: (data.company as string | undefined) ?? null,
-      message: (data.message as string | undefined) || "",
-      createdAt:
-        (data.createdAt as string | undefined) ||
-        new Date().toISOString(),
-    };
-  })
-  .filter((m): m is MessageDoc & { id: string } => m !== null);
-
+        return {
+          id: doc.id,
+          displayName:
+            (data.displayName as string | undefined) || "Anonim kullanıcı",
+          company: (data.company as string | undefined) ?? null,
+          message: (data.message as string | undefined) || "",
+          createdAt:
+            (data.createdAt as string | undefined) ||
+            new Date().toISOString(),
+        };
+      })
+      .filter((m): m is MessageDoc & { id: string } => m !== null);
 
     return NextResponse.json(
       {
@@ -72,6 +70,7 @@ export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
       },
       { status: 200 }
     );
+
   } catch (error: any) {
     console.error("[gundem/messages][GET] error:", error);
     return NextResponse.json(
