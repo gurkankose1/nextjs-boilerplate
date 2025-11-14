@@ -1,236 +1,105 @@
 // app/blog/[slug]/page.tsx
-import Link from "next/link";
 import { adminDb } from "@/lib/firebaseAdmin";
+import Link from "next/link";
+import { notFound } from "next/navigation";
 
 type BlogPost = {
-  id: string;
   title: string;
   slug: string;
-  summary?: string | null;
-  html?: string | null;
-  publishedAt?: string | null;
-  seoTitle?: string | null;
-  metaDesc?: string | null;
+  summary?: string;
+  html?: string;
   mainImageUrl?: string | null;
+  publishedAt?: string;
+  publishedDate?: string;
+  termKey?: string;
 };
 
-const SITE_NAME =
-  process.env.NEXT_PUBLIC_SITE_NAME && process.env.NEXT_PUBLIC_SITE_NAME.trim()
-    ? process.env.NEXT_PUBLIC_SITE_NAME
-    : "SkyNews.Tr";
-
-// 1) id varsa id ile dene
-// 2) slug doluysa slug ile dene
-// 3) ikisi de boşsa (veya bulunamazsa) ilk blog_posts dokümanını getir (fallback)
-async function safeGetBlogPost(params: {
-  slug: string;
-  idFromQuery?: string | null;
-}): Promise<BlogPost | null> {
-  const { slug, idFromQuery } = params;
-
-  try {
-    // 1) URL'deki ?id parametresi ile dokümanı doğrudan çek
-    if (idFromQuery && idFromQuery.trim()) {
-      const doc = await adminDb.collection("blog_posts").doc(idFromQuery).get();
-      if (doc.exists) {
-        const data = doc.data() || {};
-        return {
-          id: doc.id,
-          title: data.title || "Başlıksız yazı",
-          slug: data.slug || slug,
-          summary: data.summary || data.metaDesc || null,
-          html: data.html || null,
-          publishedAt: data.publishedAt || null,
-          seoTitle: data.seoTitle || null,
-          metaDesc: data.metaDesc || null,
-          mainImageUrl: data.mainImageUrl || null,
-        };
-      }
-    }
-
-    // 2) Slug doluysa slug ile aramayı dene
-    if (slug && slug.trim()) {
-      const snapBySlug = await adminDb
-        .collection("blog_posts")
-        .where("slug", "==", slug)
-        .limit(1)
-        .get();
-
-      if (!snapBySlug.empty) {
-        const doc = snapBySlug.docs[0];
-        const data = doc.data() || {};
-        return {
-          id: doc.id,
-          title: data.title || "Başlıksız yazı",
-          slug: data.slug || slug,
-          summary: data.summary || data.metaDesc || null,
-          html: data.html || null,
-          publishedAt: data.publishedAt || null,
-          seoTitle: data.seoTitle || null,
-          metaDesc: data.metaDesc || null,
-          mainImageUrl: data.mainImageUrl || null,
-        };
-      }
-    }
-
-    // 3) Buraya geldiysek id de slug da işimize yaramadı.
-    // Koleksiyondan ilk dokümanı fallback olarak getir.
-    const fallbackSnap = await adminDb
-      .collection("blog_posts")
-      .limit(1)
-      .get();
-
-    if (fallbackSnap.empty) {
-      return null;
-    }
-
-    const doc = fallbackSnap.docs[0];
-    const data = doc.data() || {};
-
-    return {
-      id: doc.id,
-      title: data.title || "Başlıksız yazı",
-      slug: data.slug || slug || doc.id,
-      summary: data.summary || data.metaDesc || null,
-      html: data.html || null,
-      publishedAt: data.publishedAt || null,
-      seoTitle: data.seoTitle || null,
-      metaDesc: data.metaDesc || null,
-      mainImageUrl: data.mainImageUrl || null,
-    };
-  } catch (err) {
-    console.error("Error fetching blog post:", err);
-    return null;
-  }
-}
-
-export const revalidate = 300;
-
-export default async function BlogDetailPage({
+export default async function BlogPostPage({
   params,
-  searchParams,
 }: {
   params: { slug: string };
-  searchParams?: { id?: string };
 }) {
-  const slug = params.slug;
-  const idFromQuery = searchParams?.id ?? null;
+  const { slug } = params;
 
-  const post = await safeGetBlogPost({ slug, idFromQuery });
+  // 1) Firestore'dan slug'a göre doğru dokümanı çek
+  const snap = await adminDb
+    .collection("blog_posts")
+    .where("slug", "==", slug)
+    .limit(1)
+    .get();
 
-  // Hata veya bulunamadı durumunda sade mesaj
-  if (!post) {
-    return (
-      <main className="min-h-screen bg-slate-950 text-slate-50">
-        <div className="mx-auto w-full max-w-3xl px-4 pb-16 pt-6">
-          <nav className="mb-4 text-[11px] text-slate-500">
-            <Link href="/" className="hover:text-sky-300">
-              Ana sayfa
-            </Link>
-            <span className="mx-1">/</span>
-            <Link href="/blog" className="hover:text-sky-300">
-              Havacılık Terimleri
-            </Link>
-          </nav>
-          <h1 className="text-xl font-semibold text-slate-50 mb-2">
-            İçerik bulunamadı
-          </h1>
-          <p className="text-sm text-slate-400 mb-2">
-            Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata
-            oluştu.
-          </p>
-          <p className="text-[11px] text-slate-500">
-            Debug bilgisi — slug: <code>{slug || "(boş)"}</code>
-            {idFromQuery && (
-              <>
-                {" "}
-                • id: <code>{idFromQuery}</code>
-              </>
-            )}
-          </p>
-        </div>
-      </main>
-    );
+  if (snap.empty) {
+    // Slug yanlışsa 404
+    notFound();
   }
 
+  const doc = snap.docs[0];
+  const data = doc.data() as BlogPost;
+
+  // 2) HTML içeriği al, varsa <body> sarmalayıcısını temizle
+  let html = data.html || "";
+  html = html.replace(/<\/?body[^>]*>/gi, "").trim();
+
   const published =
-    post.publishedAt &&
-    !Number.isNaN(new Date(post.publishedAt).getTime())
-      ? new Date(post.publishedAt).toLocaleDateString("tr-TR", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        })
-      : null;
+    data.publishedDate ||
+    (data.publishedAt ? data.publishedAt.slice(0, 10) : undefined);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50">
-      <div className="mx-auto w-full max-w-3xl px-4 pb-16 pt-6">
+      <div className="mx-auto max-w-5xl px-4 py-8">
         {/* Breadcrumb */}
-        <nav className="mb-4 text-[11px] text-slate-500">
-          <Link href="/" className="hover:text-sky-300">
+        <div className="mb-4 text-sm text-slate-400">
+          <Link href="/" className="hover:text-sky-400">
             Ana sayfa
           </Link>
           <span className="mx-1">/</span>
-          <Link href="/blog" className="hover:text-sky-300">
+          <Link href="/blog" className="hover:text-sky-400">
             Havacılık Terimleri
           </Link>
           <span className="mx-1">/</span>
-          <span className="text-slate-300 line-clamp-1 align-middle">
-            {post.title}
-          </span>
-        </nav>
+          <span className="text-slate-300">İçerik</span>
+        </div>
 
-        {/* Başlık + meta */}
-        <header className="mb-6 border-b border-slate-800 pb-4">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-sky-400 mb-1">
-            Havacılık Terimi • Blog
-          </p>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">
-            {post.title}
+        {/* Başlık + tarih */}
+        <header className="mb-6 space-y-2">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            {data.title}
           </h1>
-          {post.summary && (
-            <p className="mt-2 text-xs text-slate-300 sm:text-sm">
-              {post.summary}
+          {published && (
+            <p className="text-sm text-slate-400">
+              Yayın tarihi:{" "}
+              <time dateTime={published}>
+                {published}
+              </time>
             </p>
           )}
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-            <span>{SITE_NAME} Bilgi Köşesi</span>
-            {published && (
-              <>
-                <span className="h-1 w-1 rounded-full bg-slate-600" />
-                <span>{published}</span>
-              </>
-            )}
-          </div>
+          {data.summary && (
+            <p className="text-sm text-slate-300">
+              {data.summary}
+            </p>
+          )}
         </header>
 
-        {/* Görsel alanı */}
-        {post.mainImageUrl ? (
-          <div className="mb-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+        {/* Görsel */}
+        {data.mainImageUrl && (
+          <div className="mb-6 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
             <img
-  src={post.mainImageUrl}
-  alt={post.title}
-  className="w-full h-[320px] object-cover object-center rounded-xl shadow-lg shadow-slate-900/50"
-/>
-          </div>
-        ) : (
-          <div className="mb-6 h-40 w-full rounded-2xl border border-slate-800 bg-gradient-to-br from-sky-900/70 via-slate-900 to-slate-950 flex items-center justify-center">
-            <span className="text-[11px] text-slate-300">
-              Bu terim için AI görseli yakında eklenecek.
-            </span>
+              src={data.mainImageUrl}
+              alt={data.title}
+              className="w-full h-[320px] object-cover object-center"
+            />
           </div>
         )}
 
         {/* İçerik */}
-        <article className="prose prose-invert prose-sm max-w-none prose-headings:text-slate-50 prose-p:text-slate-100 prose-a:text-sky-300">
-          {post.html ? (
-            <div dangerouslySetInnerHTML={{ __html: post.html }} />
+        <article className="space-y-4 leading-relaxed text-slate-200">
+          {html ? (
+            <div
+              className="[&>p]:mb-4 [&>ul]:list-disc [&>ul]:pl-5 [&>li]:mb-1"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
           ) : (
-            <p className="text-sm text-slate-300">
-              Bu terim için içerik henüz oluşturulmamış görünüyor.
-            </p>
+            <p>Bu terim için içerik bulunamadı.</p>
           )}
         </article>
       </div>
