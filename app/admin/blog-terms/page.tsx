@@ -94,7 +94,7 @@ export default async function AdminBlogTermsPage() {
                     <td className="px-4 py-3 align-top">
                       <div className="max-w-xs">
                         <Link
-                          href={`/admin/blog-terms/${item.id}`}
+                          href={`/admin/blog-terms/view?id=${item.id}`}
                           className="text-[13px] font-medium text-slate-50 hover:text-sky-400"
                         >
                           {item.title}
