@@ -210,10 +210,10 @@ export default async function BlogDetailPage({
           <div className="mb-6 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={post.mainImageUrl}
-              alt={post.title}
-              className="h-56 w-full object-cover"
-            />
+  src={post.mainImageUrl}
+  alt={post.title}
+  className="w-full h-[320px] object-cover object-center rounded-xl shadow-lg shadow-slate-900/50"
+/>
           </div>
         ) : (
           <div className="mb-6 h-40 w-full rounded-2xl border border-slate-800 bg-gradient-to-br from-sky-900/70 via-slate-900 to-slate-950 flex items-center justify-center">
