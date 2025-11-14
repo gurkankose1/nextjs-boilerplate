@@ -196,14 +196,20 @@ export default async function HomePage({
                 </p>
               </div>
               <div className="flex gap-2 text-[11px] text-slate-400">
-                <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-1">
-                  Canlı akış • RSS + Gemini
-                </span>
-                <span className="rounded-full border border-slate-700 px-2 py-1">
-                  Editörlü içerik
-                </span>
-              </div>
-            </div>
+  <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-1">
+    Canlı akış • RSS + Gemini
+  </span>
+  <span className="rounded-full border border-slate-700 px-2 py-1">
+    Editörlü içerik
+  </span>
+  <Link
+    href="/blog"
+    className="rounded-full border border-slate-700 px-2 py-1 hover:border-sky-500 hover:text-sky-200 transition"
+  >
+    Havacılık Terimleri / Blog
+  </Link>
+</div>
+
 
             <nav className="mt-4 flex flex-wrap gap-2 text-xs">
               {CATEGORY_FILTERS.map((item) => {
