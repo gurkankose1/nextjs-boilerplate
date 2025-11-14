@@ -352,51 +352,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                 </section>
               )}
 
-              {/* GÜNDEM HAVACILIK – KOMPAKT BLOK */}
-              {latestGundemMessages.length > 0 && (
-                <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <h3 className="text-xs font-semibold tracking-[0.18em] text-sky-300 uppercase">
-                        Gündem Havacılık
-                      </h3>
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        Çalışanların sesi, havacılığın nabzı. Son yorumlardan
-                        öne çıkanlar:
-                      </p>
-                    </div>
-                    <Link
-                      href="/gundem"
-                      className="text-[11px] text-sky-300 hover:text-sky-200 border border-sky-500/60 rounded-full px-3 py-1 ml-2"
-                    >
-                      Gündeme Katıl
-                    </Link>
-                  </div>
-
-                  <ul className="space-y-1.5">
-                    {latestGundemMessages.map((m) => (
-                      <li
-                        key={m.id}
-                        className="text-[11px] text-slate-200 flex gap-2"
-                      >
-                        <span className="font-semibold text-sky-300">
-                          {m.displayName}
-                          {m.company ? (
-                            <span className="text-slate-400">
-                              {" "}
-                              · {m.company}
-                            </span>
-                          ) : null}
-                          :
-                        </span>
-                        <span className="line-clamp-1">{m.message}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-            </div>
-
+           
                   {/* SAĞ KOLON: EN ÇOK OKUNANLAR + HAFTANIN ANKETİ */}
             <aside className="space-y-4">
               {/* EN ÇOK OKUNANLAR */}
@@ -499,6 +455,65 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                   </Link>{" "}
                   sayfasına göz atın.
                 </p>
+              </section>
+                            {/* GÜNDEM HAVACILIK – ÖZET KUTUSU */}
+              <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+                <h3 className="text-sm uppercase tracking-[0.16em] text-slate-300 mb-1">
+                  Gündem Havacılık
+                </h3>
+                <p className="text-[11px] text-slate-400 mb-3">
+                  SkyNews.Tr okurları havacılık gündemini burada tartışıyor.
+                  Aşağıda son mesajlardan kısa bir özet görüyorsunuz.
+                </p>
+
+                <div className="space-y-2">
+                  {[
+                    {
+                      displayName: "Rampçı34",
+                      company: "Yer Hizmeti",
+                      message:
+                        "Sabah saatlerinde yoğun sis operasyonu bayağı zorladı, sizde durum nasıldı?",
+                    },
+                    {
+                      displayName: "ATCspotter",
+                      company: "ATC Adayı",
+                      message:
+                        "Yeni yayınlanan NOTAM hakkında ne düşünüyorsunuz, özellikle geceleri trafik akışı etkilenir mi?",
+                    },
+                    {
+                      displayName: "TechOpsTR",
+                      company: "Bakım",
+                      message:
+                        "Line maintenance ekipleri için nöbet düzeni konuşalım mı, çoğu havalimanında aynı sorunlar var.",
+                    },
+                  ].map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-lg border border-slate-800/60 bg-slate-950/40 px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-[11px] font-semibold text-sky-300">
+                          {msg.displayName}
+                        </span>
+                        {msg.company && (
+                          <span className="text-[10px] text-slate-500">
+                            {msg.company}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-200 line-clamp-2">
+                        {msg.message}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  className="mt-3 w-full rounded-full border border-slate-700 bg-slate-900/60 py-2 text-[11px] font-semibold text-sky-300 hover:bg-slate-800/80 transition"
+                >
+                  Gündeme katılmak için /gundem sayfasına git
+                </button>
               </section>
             </aside>
           </div>
