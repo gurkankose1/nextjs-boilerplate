@@ -1,7 +1,6 @@
 // app/api/cron/blog/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { markdownToHtml } from "@/lib/markdownToHtml";
 
 const SITE_NAME =
   process.env.NEXT_PUBLIC_SITE_NAME && process.env.NEXT_PUBLIC_SITE_NAME.trim()
@@ -16,17 +15,14 @@ type TermDefinition = {
   expertHint: string;
 };
 
-// —————————————————————————————————————————————
-// ✔️ GÜNÜN TERİM LİSTESİ
-// —————————————————————————————————————————————
-
+// Gün içinde dönebileceğimiz örnek terimler (daha sonra genişletebiliriz)
 const TERMS: TermDefinition[] = [
   {
     termKey: "pushback",
     title: "Pushback Nedir? Uçakların Geri İtilme ve Çekilme Süreci",
     slug: "pushback-nedir-ucaklarin-geri-itilme-sureci",
     shortDescription:
-      "Pushback, uçağın park pozisyonundan kendi motor gücünü kullanmadan, yer hizmeti aracıyla geriye itilmesi işlemidir.",
+      "Pushback, uçağın park pozisyonundan kendi motor gücünü kullanmadan, yer hizmeti aracıyla geriye itilmesi işlemidir. Apron güvenliği ve taksi başlangıcı için kritik bir adımdır.",
     expertHint:
       "Yer hizmetleri, apron güvenliği, pushback prosedürleri, traktör (tug), towbar/towbarless sistemler, ATC koordinasyonu.",
   },
@@ -35,100 +31,101 @@ const TERMS: TermDefinition[] = [
     title: "PBB (Passenger Boarding Bridge) Nedir? Yolcu Köprülerinin Rolü",
     slug: "pbb-nedir-yolcu-kopru-isleyisi",
     shortDescription:
-      "Passenger Boarding Bridge, yolcunun terminal ile uçak arasında güvenli ve konforlu geçişini sağlayan köprü sistemidir.",
+      "Passenger Boarding Bridge, yolcunun terminal ile uçak arasında güvenli ve konforlu geçişini sağlayan köprü sistemidir. Operasyon, güvenlik ve havalimanı verimliliğinde önemli rol oynar.",
     expertHint:
-      "Terminal operasyonları, PBB operatörlüğü, köprü parkı, uçak kapı hizalama, apron güvenliği.",
+      "Havalimanı terminal operasyonları, PBB operatörlüğü, köprü parkı, uçak kapı hizalama, apron güvenliği, yolcu deneyimi.",
   },
   {
     termKey: "atc",
     title: "ATC Nedir? Hava Trafik Kontrolörleri Ne İş Yapar?",
     slug: "atc-nedir-hava-trafik-kontrolorleri-ne-is-yapar",
     shortDescription:
-      "Air Traffic Control (ATC), hava ve yer trafiğinin güvenli ve düzenli akışını sağlayan kritik bir hizmettir.",
+      "Air Traffic Control (ATC), hava araçlarının havada ve yerde emniyetli ve düzenli akışını sağlayan kritik bir hizmettir. Kule, yaklaşma ve saha radar ünitelerini içerir.",
     expertHint:
-      "Kule, yaklaşma (APP), saha radar (ACC), IFR/VFR, hava trafik yönetimi.",
+      "Hava trafik yönetimi, kule (TWR), yaklaşma (APP), saha/alan radar (ACC), frekans kullanımı, ayrım miniması, IFR/VFR.",
   },
   {
     termKey: "weight-and-balance",
     title: "Uçaklarda Ağırlık ve Denge (Weight & Balance) Nedir?",
     slug: "ucaklarda-agirlik-ve-denge-weight-and-balance",
     shortDescription:
-      "Weight & Balance, uçağın ağırlığının ve ağırlık merkezinin güvenli limitlerde tutulmasını sağlayan kritik hesaplamalardır.",
+      "Weight & Balance, uçağın toplam ağırlığı ve ağırlık merkezinin limitler içinde kalmasını sağlar. Emniyetli kalkış, tırmanış ve iniş performansı için kritik öneme sahiptir.",
     expertHint:
-      "Load sheet, trim, MAC, CG, performans hesaplamaları, kargo/bagaj yüklemesi.",
+      "Load sheet, trim, MAC, CG, kalkış ağırlığı limitleri, kabin yerleşimi, kargo & bagaj yüklemesi, performans hesaplamaları.",
   },
 ];
 
-// —————————————————————————————————————————————
-// ✔️ Günün terimini seç (deterministik)
-// —————————————————————————————————————————————
+// Bugünün tarihine göre deterministik bir terim seç (her gün farklı olsun)
 function pickTermOfTheDay(date: Date, overrideKey?: string | null): TermDefinition {
   if (overrideKey) {
-    const f = TERMS.find((t) => t.termKey === overrideKey);
-    if (f) return f;
+    const found = TERMS.find((t) => t.termKey === overrideKey);
+    if (found) return found;
   }
-  const digits = date
-    .toISOString()
-    .slice(0, 10)
-    .replace(/\D/g, "")
+  const yyyyMmDd = date.toISOString().slice(0, 10); // 2025-11-14
+  const sum = yyyyMmDd
     .split("")
-    .map((n) => Number(n));
-  const idx = digits.reduce((a, b) => a + b, 0) % TERMS.length;
+    .filter((ch) => /\d/.test(ch))
+    .map((ch) => Number(ch))
+    .reduce((acc, n) => acc + n, 0);
+  const idx = sum % TERMS.length;
   return TERMS[idx];
 }
 
-// —————————————————————————————————————————————
-// ✔️ HTML → Summary
-// —————————————————————————————————————————————
+// Basit HTML temizleme ve özet çıkarma
 function extractSummaryFromHtml(html: string, maxLength = 260): string {
   const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  return text.length <= maxLength
-    ? text
-    : text.slice(0, maxLength - 1).trimEnd() + "…";
+  if (text.length <= maxLength) return text;
+  return text.slice(0, maxLength - 1).trimEnd() + "…";
 }
 
-// —————————————————————————————————————————————
-// ✔️ Gemini'den HTML + imagePrompt üretimi
-// —————————————————————————————————————————————
-
+// Gemini'den HTML gövdesi almaya çalışan yardımcı fonksiyon
 async function generateHtmlWithGemini(term: TermDefinition): Promise<{
   html: string;
   imagePrompt: string;
 }> {
   const apiKey = process.env.GEMINI_API_KEY;
 
-  const fallbackHtml = `
+  const baseHtmlFallback = `
 <p>${term.shortDescription}</p>
-<p>${SITE_NAME} teknik havacılık terimlerini operasyon ekiplerinin anlayacağı şekilde sadeleştirerek sunmayı amaçlar.</p>
-  `.trim();
+<p>Bu yazıda ${term.title} konusunu temel kavramlar, operasyonel süreçler ve emniyet bakış açısıyla özetleyeceğiz.</p>
+<p>${SITE_NAME}, bu tür teknik kavramları sahada çalışan ekiplerin anlayacağı sade bir dille anlatmayı amaçlar.</p>
+`.trim();
 
-  const fallbackImage = `Cinematic aviation illustration of ${term.title}. Dark blue airport tones.`;
+  const defaultImagePrompt = `Sinematik, gerçekçi havacılık illüstrasyonu: ${term.title} konusunu çağrıştıran, apron ve uçak detayları içeren bir sahne. Koyu lacivert ve mavi tonlar.`;
 
   if (!apiKey) {
-    return { html: fallbackHtml, imagePrompt: fallbackImage };
+    // Gemini yoksa basit bir fallback dön
+    return {
+      html: baseHtmlFallback,
+      imagePrompt: defaultImagePrompt,
+    };
   }
 
   try {
-    const userPrompt = `
-Sen ${SITE_NAME} için yazı hazırlayan profesyonel bir havacılık editörüsün.
-
-Konu: ${term.title}
-Kısa açıklama: ${term.shortDescription}
-Uzman bağlamı: ${term.expertHint}
-
-GÖREV:
-• Sadece HTML gövdesi üret (başlık <h1> verme)
-• 5–7 paragraf teknik-ama-sade bir yazı üret
-• Gerekirse <ul>, <li> kullan
-• Türkçe yaz
-• Son satıra şu formatta image prompt ekle: IMAGE_PROMPT: <kısa İngilizce sahne>
-    `.trim();
+    const systemAndUserPrompt = [
+      `Sen ${SITE_NAME} için yazı hazırlayan profesyonel bir havacılık editörüsün.`,
+      `Konuyu, sahada çalışan ramp, ATC, yer hizmeti, kabin ve teknik ekiplerin anlayacağı sade ama teknik olarak doğru bir dille anlat.`,
+      ``,
+      `Konu başlığı: "${term.title}"`,
+      `Kısa açıklama: "${term.shortDescription}"`,
+      `Uzmanlık bağlamı: ${term.expertHint}`,
+      ``,
+      `ÇIKTI FORMATIN:`,
+      `• Sadece HTML gövdesi üret (başlık etiketi <h1> yazma, sadece <p>, <ul>, <li>, <strong> vb. kullan).`,
+      `• 5–7 paragraf olsun.`,
+      `• Gerektiğinde madde işaretli listeler kullanabilirsin.`,
+      `• Türkçe yaz.`,
+      ``,
+      `Ayrıca, bu konuyu temsil edecek bir AI görseli için çok kısa bir İngilizce "image prompt" üret (tek cümle).`,
+      `Bu image prompt'u da en sonda ayrı bir satırda şu formatta yaz:`,
+      `"IMAGE_PROMPT: <prompt burada>"`,
+    ].join("\n");
 
     const body = {
       contents: [
         {
           role: "user",
-          parts: [{ text: userPrompt }],
+          parts: [{ text: systemAndUserPrompt }],
         },
       ],
     };
@@ -137,87 +134,94 @@ GÖREV:
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(body),
       }
     );
 
     if (!resp.ok) {
-      console.error("Gemini error:", await resp.text());
-      return { html: fallbackHtml, imagePrompt: fallbackImage };
+      console.error("Gemini blog call failed:", await resp.text());
+      return {
+        html: baseHtmlFallback,
+        imagePrompt: defaultImagePrompt,
+      };
     }
 
     const data = await resp.json();
-    const raw =
-      data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("\n") ||
-      "";
+    const parts: string[] =
+      data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "") ?? [];
+    let fullText = parts.join("\n").trim();
 
-    let imagePrompt = fallbackImage;
+    let imagePrompt = defaultImagePrompt;
 
-    // IMAGE_PROMPT ayıklama
-    const imgMatch = raw.match(/IMAGE_PROMPT:\s*(.+)$/im);
-    if (imgMatch) {
-      imagePrompt = imgMatch[1].trim();
+    // IMAGE_PROMPT satırını ayıklayalım
+    const imagePromptMatch = fullText.match(/IMAGE_PROMPT:\s*(.+)$/im);
+    if (imagePromptMatch) {
+      imagePrompt = imagePromptMatch[1].trim();
+      fullText = fullText.replace(/IMAGE_PROMPT:\s*.+$/im, "").trim();
     }
 
-    // Prompt satırını kaldır
-    let cleaned = raw.replace(/IMAGE_PROMPT:\s*.+$/im, "").trim();
-
-    // Markdown fence temizliği
-    cleaned = cleaned
+    // ```html ve ``` gibi markdown code fence'leri temizle
+    let cleaned = fullText
       .replace(/```html/gi, "")
       .replace(/```/g, "")
       .trim();
 
-    // Markdown → HTML çevir
-    const html = await markdownToHtml(cleaned);
+    if (!cleaned) {
+      cleaned = baseHtmlFallback;
+    }
 
-    return { html, imagePrompt };
+    return {
+      html: cleaned,
+      imagePrompt,
+    };
   } catch (err) {
-    console.error("Gemini exception:", err);
-    return { html: fallbackHtml, imagePrompt: fallbackImage };
+    console.error("Error calling Gemini for blog:", err);
+    return {
+      html: baseHtmlFallback,
+      imagePrompt: defaultImagePrompt,
+    };
   }
 }
-
-// —————————————————————————————————————————————
-// ✔️ ANA CRON ROUTE — Blog üretimi
-// —————————————————————————————————————————————
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const secret = url.searchParams.get("secret");
   const overrideKey = url.searchParams.get("termKey") || null;
 
+  // Basit secret kontrolü
   if (!secret || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
   const today = new Date();
-  const yyyyMmDd = today.toISOString().slice(0, 10);
-
   const term = pickTermOfTheDay(today, overrideKey);
 
   try {
-    // Aynı terim bugün oluşturulmuş mu?
-    const existing = await adminDb
+    // Aynı terim için bugün zaten blog yazısı oluşturulmuş mu kontrol et
+    const yyyyMmDd = today.toISOString().slice(0, 10); // 2025-11-14
+    const existingSnap = await adminDb
       .collection("blog_posts")
       .where("termKey", "==", term.termKey)
       .where("publishedDate", "==", yyyyMmDd)
       .limit(1)
       .get();
 
-    if (!existing.empty) {
+    if (!existingSnap.empty) {
       return NextResponse.json({
         ok: true,
         skipped: true,
-        reason: "Already exists for today",
+        reason: "Today’s blog post for this term already exists.",
         termKey: term.termKey,
+        date: yyyyMmDd,
       });
     }
 
-    // Gemini HTML + görsel prompt
+    // Gemini'den HTML + imagePrompt al
     const { html, imagePrompt } = await generateHtmlWithGemini(term);
-    const summary = extractSummaryFromHtml(html);
+    const summary = extractSummaryFromHtml(html, 260);
 
     const docRef = await adminDb.collection("blog_posts").add({
       termKey: term.termKey,
@@ -230,7 +234,7 @@ export async function GET(req: NextRequest) {
       category: "term",
       source: "auto-gemini",
       imagePrompt,
-      mainImageUrl: null,
+      mainImageUrl: null, // Daha sonra AI veya Pexels/Unsplash ile dolduracağız
       publishedAt: today.toISOString(),
       publishedDate: yyyyMmDd,
       createdAt: new Date().toISOString(),
@@ -241,12 +245,16 @@ export async function GET(req: NextRequest) {
       createdId: docRef.id,
       termKey: term.termKey,
       slug: term.slug,
-      date: yyyyMmDd,
+      title: term.title,
+      publishedDate: yyyyMmDd,
     });
   } catch (err) {
-    console.error("Cron blog error:", err);
+    console.error("Error in /api/cron/blog:", err);
     return NextResponse.json(
-      { ok: false, error: "Internal server error" },
+      {
+        ok: false,
+        error: "Internal error while creating blog post",
+      },
       { status: 500 }
     );
   }
