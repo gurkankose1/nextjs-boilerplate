@@ -3,6 +3,7 @@ import { adminDb } from "@/lib/firebaseAdmin";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ADMIN_SESSION_COOKIE_NAME } from "@/lib/adminAuth";
+import Link from "next/link";
 
 export const revalidate = 0;
 
@@ -56,8 +57,8 @@ export default async function AdminBlogTermsPage() {
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-300">
             Burada cron ile otomatik üretilen havacılık terimi blog yazılarını
-            görüyorsun. Bir sonraki adımda, buraya düzenleme formu ve AI görselini
-            yeniden üretme butonları ekleyeceğiz.
+            görüyorsun. Başlığa tıklayarak detay/düzenleme ekranına
+            geçebilirsin.
           </p>
         </header>
 
@@ -92,9 +93,12 @@ export default async function AdminBlogTermsPage() {
                   >
                     <td className="px-4 py-3 align-top">
                       <div className="max-w-xs">
-                        <div className="text-[13px] font-medium text-slate-50">
+                        <Link
+                          href={`/admin/blog-terms/${item.id}`}
+                          className="text-[13px] font-medium text-slate-50 hover:text-sky-400"
+                        >
                           {item.title}
-                        </div>
+                        </Link>
                         <div className="mt-1 text-[11px] text-slate-500">
                           ID:{" "}
                           <span className="font-mono text-slate-400">
