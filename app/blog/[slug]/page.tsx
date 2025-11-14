@@ -1,6 +1,5 @@
 // app/blog/[slug]/page.tsx
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { adminDb } from "@/lib/firebaseAdmin";
 
 type BlogPost = {
@@ -20,30 +19,35 @@ const SITE_NAME =
     ? process.env.NEXT_PUBLIC_SITE_NAME
     : "SkyNews.Tr";
 
-async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
-  // Sadece slug ile arıyoruz – ekstra id karmaşası yok
-  const snap = await adminDb
-    .collection("blog_posts")
-    .where("slug", "==", slug)
-    .limit(1)
-    .get();
+async function safeGetBlogPostBySlug(slug: string): Promise<BlogPost | null> {
+  try {
+    const snap = await adminDb
+      .collection("blog_posts")
+      .where("slug", "==", slug)
+      .limit(1)
+      .get();
 
-  if (snap.empty) return null;
+    if (snap.empty) return null;
 
-  const doc = snap.docs[0];
-  const data = doc.data() || {};
+    const doc = snap.docs[0];
+    const data = doc.data() || {};
 
-  return {
-    id: doc.id,
-    title: data.title || "Başlıksız yazı",
-    slug: data.slug || slug,
-    summary: data.summary || data.metaDesc || null,
-    html: data.html || null,
-    publishedAt: data.publishedAt || null,
-    seoTitle: data.seoTitle || null,
-    metaDesc: data.metaDesc || null,
-    mainImageUrl: data.mainImageUrl || null,
-  };
+    return {
+      id: doc.id,
+      title: data.title || "Başlıksız yazı",
+      slug: data.slug || slug,
+      summary: data.summary || data.metaDesc || null,
+      html: data.html || null,
+      publishedAt: data.publishedAt || null,
+      seoTitle: data.seoTitle || null,
+      metaDesc: data.metaDesc || null,
+      mainImageUrl: data.mainImageUrl || null,
+    };
+  } catch (err) {
+    // Herhangi bir Firestore hatasında 500 yerine sade bir fallback dönelim
+    console.error("Error fetching blog post by slug:", err);
+    return null;
+  }
 }
 
 export const revalidate = 300;
@@ -54,10 +58,32 @@ export default async function BlogDetailPage({
   params: { slug: string };
 }) {
   const slug = params.slug;
-  const post = await getBlogPostBySlug(slug);
+  const post = await safeGetBlogPostBySlug(slug);
 
+  // Hata veya bulunamadı durumunda 500 yerine basit bir mesaj göstereceğiz
   if (!post) {
-    notFound();
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="mx-auto w-full max-w-3xl px-4 pb-16 pt-6">
+          <nav className="mb-4 text-[11px] text-slate-500">
+            <Link href="/" className="hover:text-sky-300">
+              Ana sayfa
+            </Link>
+            <span className="mx-1">/</span>
+            <Link href="/blog" className="hover:text-sky-300">
+              Havacılık Terimleri
+            </Link>
+          </nav>
+          <h1 className="text-xl font-semibold text-slate-50 mb-2">
+            İçerik bulunamadı
+          </h1>
+          <p className="text-sm text-slate-400">
+            Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata
+            oluştu. Birkaç dakika sonra tekrar deneyebilirsin.
+          </p>
+        </div>
+      </main>
+    );
   }
 
   const published =
