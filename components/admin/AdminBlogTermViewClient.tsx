@@ -21,6 +21,15 @@ type State =
   | { status: "error"; message: string }
   | { status: "loaded"; id: string; data: any };
 
+// Gemini'nin ürettiği HTML gövdesinde <body> etiketi varsa onu temizleyelim
+function normalizeHtml(raw: string | undefined | null): string {
+  if (!raw) return "";
+  let html = String(raw).trim();
+  // <body> ve </body> etiketlerini at
+  html = html.replace(/<\/?body[^>]*>/gi, "");
+  return html.trim();
+}
+
 export function AdminBlogTermViewClient() {
   const searchParams = useSearchParams();
   const idFromUrl = searchParams.get("id");
@@ -89,6 +98,7 @@ export function AdminBlogTermViewClient() {
     fetchDoc();
   }, [idFromUrl]);
 
+  // Yükleniyor ekranı
   if (state.status === "idle" || state.status === "loading") {
     const loadingId =
       state.status === "loading" ? state.id : idFromUrl ?? "(yok)";
@@ -110,6 +120,7 @@ export function AdminBlogTermViewClient() {
     );
   }
 
+  // Hata ekranı
   if (state.status === "error") {
     return (
       <section className="rounded-2xl border border-red-900/60 bg-red-950/40 p-4">
@@ -133,21 +144,161 @@ export function AdminBlogTermViewClient() {
     );
   }
 
-  // loaded
+  // Yüklendi → Şık detay görünümü
+  const doc = state.data || {};
+  const normalizedHtml = normalizeHtml(doc.html);
+
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-      <h2 className="mb-3 text-sm font-semibold text-slate-50">
-        Doküman Detayı (Ham JSON)
-      </h2>
-      <p className="mb-2 text-xs text-slate-300">
-        ID:&nbsp;
-        <span className="font-mono text-[11px] text-slate-100 break-all">
-          {state.id}
-        </span>
-      </p>
-      <pre className="mt-3 max-h-[480px] overflow-auto rounded-xl bg-slate-950/80 p-3 font-mono text-[11px] text-sky-200">
-{JSON.stringify(state.data, null, 2)}
-      </pre>
+    <section className="space-y-6">
+      {/* Üst bilgi kartları */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Temel bilgiler */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+          <h2 className="text-sm font-semibold text-slate-50">
+            Temel Bilgiler
+          </h2>
+          <dl className="mt-3 space-y-2 text-xs text-slate-200">
+            <div>
+              <dt className="font-semibold text-slate-300">Başlık</dt>
+              <dd className="mt-1 text-slate-100">
+                {doc.title ?? "(Başlıksız)"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-300">Slug</dt>
+              <dd className="mt-1 font-mono text-[11px] text-slate-200">
+                {doc.slug ?? "(yok)"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-300">Terim Anahtarı</dt>
+              <dd className="mt-1 text-slate-100">
+                {doc.termKey ?? <span className="text-slate-500">(yok)</span>}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-300">Meta Açıklama</dt>
+              <dd className="mt-1 text-slate-200">
+                {doc.metaDesc ?? (
+                  <span className="text-slate-500">(yok)</span>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-300">Kategori</dt>
+              <dd className="mt-1 text-slate-200">
+                {doc.category ?? <span className="text-slate-500">(yok)</span>}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-300">Kaynak</dt>
+              <dd className="mt-1 text-slate-200">
+                {doc.source ?? <span className="text-slate-500">(yok)</span>}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-300">Yayın Tarihi</dt>
+              <dd className="mt-1 text-slate-200">
+                {doc.publishedAt
+                  ? new Date(doc.publishedAt).toLocaleString("tr-TR", {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : "(yok)"}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Görsel bilgisi */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+          <h2 className="text-sm font-semibold text-slate-50">
+            Görsel Bilgisi
+          </h2>
+          <div className="mt-3 text-xs text-slate-200 space-y-2">
+            <div>
+              <div className="font-semibold text-slate-300">
+                Image prompt:
+              </div>
+              <p className="mt-1 text-slate-200">
+                {doc.imagePrompt ?? (
+                  <span className="text-slate-500">(tanımlı değil)</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <div className="font-semibold text-slate-300">
+                Ana görsel URL:
+              </div>
+              <p className="mt-1 break-all text-slate-200">
+                {doc.mainImageUrl ? (
+                  doc.mainImageUrl
+                ) : (
+                  <span className="text-slate-500">(henüz görsel yok)</span>
+                )}
+              </p>
+            </div>
+
+            {doc.mainImageUrl && (
+              <div className="mt-3">
+                <div className="mb-1 text-[11px] text-slate-400">
+                  Önizleme:
+                </div>
+                <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/80">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={doc.mainImageUrl}
+                    alt={doc.title ?? ""}
+                    className="h-40 w-full object-cover"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Özet */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+        <h2 className="text-sm font-semibold text-slate-50">
+          Kısa Özet (summary)
+        </h2>
+        <p className="mt-2 text-xs text-slate-200 whitespace-pre-wrap">
+          {doc.summary ?? <span className="text-slate-500">(yok)</span>}
+        </p>
+      </div>
+
+      {/* HTML gövdesi */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+        <h2 className="mb-3 text-sm font-semibold text-slate-50">
+          İçerik Gövdesi (HTML)
+        </h2>
+        {normalizedHtml ? (
+          <div className="prose prose-invert prose-sm max-w-none">
+            <div
+              className="text-xs leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: normalizedHtml }}
+            />
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400">
+            Bu terim için henüz HTML içerik bulunmuyor.
+          </p>
+        )}
+      </div>
+
+      {/* İstersen debug için JSON'u da altta tutalım */}
+      <div className="rounded-2xl border border-slate-900 bg-slate-950/60 p-4">
+        <h2 className="mb-2 text-xs font-semibold text-slate-400">
+          Debug – Ham JSON
+        </h2>
+        <pre className="max-h-[320px] overflow-auto rounded-xl bg-slate-950/90 p-3 font-mono text-[10px] text-sky-200">
+{JSON.stringify(doc, null, 2)}
+        </pre>
+      </div>
     </section>
   );
 }
