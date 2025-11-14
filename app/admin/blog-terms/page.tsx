@@ -17,7 +17,7 @@ type BlogTerm = {
 
 export default async function AdminBlogTermsPage() {
   // Basit admin oturum kontrolü
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const session = cookieStore.get(ADMIN_SESSION_COOKIE_NAME);
 
   if (!session || session.value !== "1") {
