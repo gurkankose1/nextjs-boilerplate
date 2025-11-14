@@ -39,26 +39,28 @@ export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
       .limit(50)
       .get();
 
-    const messages: (MessageDoc & { id: string })[] = snap.docs
-      .map((doc) => {
-        const data = doc.data() as Record<string, unknown>;
+    const rawMessages = snap.docs.map((doc) => {
+      const data = doc.data() as Record<string, unknown>;
 
-        const status = (data.status as string | undefined) ?? "visible";
-        if (status !== "visible") return null;
+      const status = (data.status as string | undefined) ?? "visible";
+      if (status !== "visible") return null;
 
-        return {
-          id: doc.id,
-          displayName:
-            (data.displayName as string | undefined) || "Anonim kullanıcı",
-          company: (data.company as string | undefined) ?? null,
-          message: (data.message as string | undefined) || "",
-          createdAt:
-            (data.createdAt as string | undefined) ||
-            new Date().toISOString(),
-          status,
-        };
-      })
-      .filter((m): m is MessageDoc & { id: string } => m !== null);
+      return {
+        id: doc.id,
+        displayName:
+          (data.displayName as string | undefined) || "Anonim kullanıcı",
+        company: (data.company as string | undefined) ?? null,
+        message: (data.message as string | undefined) || "",
+        createdAt:
+          (data.createdAt as string | undefined) ||
+          new Date().toISOString(),
+        status,
+      };
+    });
+
+    const messages: (MessageDoc & { id: string })[] = rawMessages.filter(
+      (m): m is MessageDoc & { id: string } => m !== null
+    );
 
     return NextResponse.json(
       {
@@ -172,26 +174,28 @@ export async function POST(
       .limit(50)
       .get();
 
-    const messages: (MessageDoc & { id: string })[] = snap.docs
-      .map((doc) => {
-        const data = doc.data() as Record<string, unknown>;
+    const rawMessages = snap.docs.map((doc) => {
+      const data = doc.data() as Record<string, unknown>;
 
-        const status = (data.status as string | undefined) ?? "visible";
-        if (status !== "visible") return null;
+      const status = (data.status as string | undefined) ?? "visible";
+      if (status !== "visible") return null;
 
-        return {
-          id: doc.id,
-          displayName:
-            (data.displayName as string | undefined) || "Anonim kullanıcı",
-          company: (data.company as string | undefined) ?? null,
-          message: (data.message as string | undefined) || "",
-          createdAt:
-            (data.createdAt as string | undefined) ||
-            new Date().toISOString(),
-          status,
-        };
-      })
-      .filter((m): m is MessageDoc & { id: string } => m !== null);
+      return {
+        id: doc.id,
+        displayName:
+          (data.displayName as string | undefined) || "Anonim kullanıcı",
+        company: (data.company as string | undefined) ?? null,
+        message: (data.message as string | undefined) || "",
+        createdAt:
+          (data.createdAt as string | undefined) ||
+          new Date().toISOString(),
+        status,
+      };
+    });
+
+    const messages: (MessageDoc & { id: string })[] = rawMessages.filter(
+      (m): m is MessageDoc & { id: string } => m !== null
+    );
 
     return NextResponse.json(
       {
