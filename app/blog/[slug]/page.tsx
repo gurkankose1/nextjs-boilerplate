@@ -19,8 +19,34 @@ const SITE_NAME =
     ? process.env.NEXT_PUBLIC_SITE_NAME
     : "SkyNews.Tr";
 
-async function safeGetBlogPostBySlug(slug: string): Promise<BlogPost | null> {
+// Önce id ile dene, olmazsa slug ile dene
+async function safeGetBlogPost(params: {
+  slug: string;
+  idFromQuery?: string | null;
+}): Promise<BlogPost | null> {
+  const { slug, idFromQuery } = params;
+
   try {
+    // 1) URL'deki ?id parametresi ile dokümanı doğrudan çek
+    if (idFromQuery) {
+      const doc = await adminDb.collection("blog_posts").doc(idFromQuery).get();
+      if (doc.exists) {
+        const data = doc.data() || {};
+        return {
+          id: doc.id,
+          title: data.title || "Başlıksız yazı",
+          slug: data.slug || slug,
+          summary: data.summary || data.metaDesc || null,
+          html: data.html || null,
+          publishedAt: data.publishedAt || null,
+          seoTitle: data.seoTitle || null,
+          metaDesc: data.metaDesc || null,
+          mainImageUrl: data.mainImageUrl || null,
+        };
+      }
+    }
+
+    // 2) id bulunamazsa slug ile aramayı dene
     const snap = await adminDb
       .collection("blog_posts")
       .where("slug", "==", slug)
@@ -44,8 +70,7 @@ async function safeGetBlogPostBySlug(slug: string): Promise<BlogPost | null> {
       mainImageUrl: data.mainImageUrl || null,
     };
   } catch (err) {
-    // Herhangi bir Firestore hatasında 500 yerine sade bir fallback dönelim
-    console.error("Error fetching blog post by slug:", err);
+    console.error("Error fetching blog post:", err);
     return null;
   }
 }
@@ -54,13 +79,17 @@ export const revalidate = 300;
 
 export default async function BlogDetailPage({
   params,
+  searchParams,
 }: {
   params: { slug: string };
+  searchParams?: { id?: string };
 }) {
   const slug = params.slug;
-  const post = await safeGetBlogPostBySlug(slug);
+  const idFromQuery = searchParams?.id ?? null;
 
-  // Hata veya bulunamadı durumunda 500 yerine basit bir mesaj göstereceğiz
+  const post = await safeGetBlogPost({ slug, idFromQuery });
+
+  // Hata veya bulunamadı durumunda sade mesaj
   if (!post) {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-50">
@@ -77,9 +106,18 @@ export default async function BlogDetailPage({
           <h1 className="text-xl font-semibold text-slate-50 mb-2">
             İçerik bulunamadı
           </h1>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-400 mb-2">
             Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata
-            oluştu. Birkaç dakika sonra tekrar deneyebilirsin.
+            oluştu.
+          </p>
+          <p className="text-[11px] text-slate-500">
+            Debug bilgisi — slug: <code>{slug}</code>{" "}
+            {idFromQuery && (
+              <>
+                {" "}
+                • id: <code>{idFromQuery}</code>
+              </>
+            )}
           </p>
         </div>
       </main>
