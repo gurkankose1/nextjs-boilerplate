@@ -196,20 +196,20 @@ export default async function HomePage({
                 </p>
               </div>
               <div className="flex gap-2 text-[11px] text-slate-400">
-  <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-1">
-    Canlı akış • RSS + Gemini
-  </span>
-  <span className="rounded-full border border-slate-700 px-2 py-1">
-    Editörlü içerik
-  </span>
-  <Link
-    href="/blog"
-    className="rounded-full border border-slate-700 px-2 py-1 hover:border-sky-500 hover:text-sky-200 transition"
-  >
-    Havacılık Terimleri / Blog
-  </Link>
-</div>
-
+                <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-1">
+                  Canlı akış • RSS + Gemini
+                </span>
+                <span className="rounded-full border border-slate-700 px-2 py-1">
+                  Editörlü içerik
+                </span>
+                <Link
+                  href="/blog"
+                  className="rounded-full border border-slate-700 px-2 py-1 hover:border-sky-500 hover:text-sky-200 transition"
+                >
+                  Havacılık Terimleri / Blog
+                </Link>
+              </div>
+            </div>
 
             <nav className="mt-4 flex flex-wrap gap-2 text-xs">
               {CATEGORY_FILTERS.map((item) => {
@@ -366,7 +366,7 @@ export default async function HomePage({
                       href={`/news/${encodeURIComponent(
                         art.slug
                       )}?id=${encodeURIComponent(art.id)}`}
-                      className="group flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/60 p-3 transition hover:border-sky-500/70 hover:bg-slate-900"
+                      className="group flex flex-col justify_between rounded-xl border border-slate-800 bg-slate-900/60 p-3 transition hover:border-sky-500/70 hover:bg-slate-900"
                     >
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <span className="rounded-full border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-sky-300">
@@ -460,7 +460,7 @@ export default async function HomePage({
 
         {/* SAĞ KOLON: EN ÇOK OKUNANLAR + HAFTANIN ANKETİ + GÜNDEM ÖZET */}
         {articles.length > 0 && (
-          <div className="w-full max-w-xs shrink-0 space-y-4 lg:max-w-sm">
+          <div className="w_full max-w-xs shrink-0 space-y-4 lg:max-w-sm">
             {/* SAĞ KOLON: EN ÇOK OKUNANLAR + HAFTANIN ANKETİ */}
             <aside className="space-y-4">
               {/* EN ÇOK OKUNANLAR */}
