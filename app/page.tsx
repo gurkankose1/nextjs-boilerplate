@@ -397,8 +397,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               )}
             </div>
 
-            {/* SAĞ KOLON: EN ÇOK OKUNANLAR */}
+          /* SAĞ KOLON: EN ÇOK OKUNANLAR + HAFTANIN ANKETİ */}
             <aside className="space-y-4">
+              {/* EN ÇOK OKUNANLAR */}
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
                 <h3 className="text-sm uppercase tracking-[0.16em] text-slate-300 mb-3">
                   En çok okunan haberler
@@ -442,10 +443,62 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                   </ol>
                 )}
               </div>
+
+              {/* HAFTANIN ANKETİ – TASARIM İSKELETİ */}
+              <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+                <h3 className="text-sm uppercase tracking-[0.16em] text-slate-300 mb-1">
+                  Haftanın Anketi
+                </h3>
+                <p className="text-[11px] text-slate-400 mb-3">
+                  Bu alan şimdilik sadece tasarım amacıyla sahte veri kullanıyor.
+                  Anket backend&apos;e bağlandığında otomatik güncellenecek.
+                </p>
+
+                <p className="text-xs font-medium text-slate-200 mb-3">
+                  Bu hafta havacılık gündeminde sizi en çok hangi başlık
+                  ilgilendiriyor?
+                </p>
+
+                <form className="space-y-1.5">
+                  {[
+                    "Yeni uçak siparişleri",
+                    "Havalimanı operasyonları",
+                    "Askeri havacılık gelişmeleri",
+                    "Kaza / olay raporları",
+                  ].map((opt, i) => (
+                    <label
+                      key={i}
+                      className="flex items-center gap-2 text-[11px] text-slate-200"
+                    >
+                      <input
+                        type="radio"
+                        name="weekly-poll-preview"
+                        className="h-3 w-3 rounded border-slate-600 bg-slate-900"
+                        disabled
+                      />
+                      <span>{opt}</span>
+                    </label>
+                  ))}
+
+                  <button
+                    type="button"
+                    disabled
+                    className="mt-2 w-full rounded-full bg-slate-800 text-[11px] font-semibold text-slate-400 py-2 border border-slate-700 cursor-not-allowed"
+                  >
+                    Yakında oy kullanabileceksiniz
+                  </button>
+                </form>
+
+                <p className="mt-2 text-[10px] text-slate-500">
+                  Anket detayları ve önceki haftaların sonuçları için{" "}
+                  <Link
+                    href="/gundem"
+                    className="underline underline-offset-2 text-sky-300 hover:text-sky-200"
+                  >
+                    Gündem Havacılık
+                  </Link>{" "}
+                  sayfasına göz atın.
+                </p>
+              </section>
             </aside>
-          </div>
-        )}
-      </div>
-    </main>
-  );
-}
+
