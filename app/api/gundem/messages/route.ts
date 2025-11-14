@@ -39,13 +39,15 @@ export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
       .limit(50)
       .get();
 
-    const rawMessages = snap.docs.map((doc) => {
+    const messages: (MessageDoc & { id: string })[] = [];
+
+    snap.docs.forEach((doc) => {
       const data = doc.data() as Record<string, unknown>;
 
       const status = (data.status as string | undefined) ?? "visible";
-      if (status !== "visible") return null;
+      if (status !== "visible") return;
 
-      return {
+      messages.push({
         id: doc.id,
         displayName:
           (data.displayName as string | undefined) || "Anonim kullanıcı",
@@ -55,12 +57,8 @@ export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
           (data.createdAt as string | undefined) ||
           new Date().toISOString(),
         status,
-      };
+      });
     });
-
-    const messages: (MessageDoc & { id: string })[] = rawMessages.filter(
-      (m): m is MessageDoc & { id: string } => m !== null
-    );
 
     return NextResponse.json(
       {
@@ -174,13 +172,15 @@ export async function POST(
       .limit(50)
       .get();
 
-    const rawMessages = snap.docs.map((doc) => {
+    const messages: (MessageDoc & { id: string })[] = [];
+
+    snap.docs.forEach((doc) => {
       const data = doc.data() as Record<string, unknown>;
 
       const status = (data.status as string | undefined) ?? "visible";
-      if (status !== "visible") return null;
+      if (status !== "visible") return;
 
-      return {
+      messages.push({
         id: doc.id,
         displayName:
           (data.displayName as string | undefined) || "Anonim kullanıcı",
@@ -190,12 +190,8 @@ export async function POST(
           (data.createdAt as string | undefined) ||
           new Date().toISOString(),
         status,
-      };
+      });
     });
-
-    const messages: (MessageDoc & { id: string })[] = rawMessages.filter(
-      (m): m is MessageDoc & { id: string } => m !== null
-    );
 
     return NextResponse.json(
       {
