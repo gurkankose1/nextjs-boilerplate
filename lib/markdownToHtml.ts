@@ -3,7 +3,7 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import rehypeSanitize from "rehype-sanitize";
 import rehypeSlug from "rehype-slug";
-import rehypeAutolinkHeadings from "rehype-autolink-headings";
+import rehypeAutolinkHeadings from "rehype-autolink-headings-esm";
 import rehypeStringify from "rehype-stringify";
 
 export async function markdownToHtml(markdown: string): Promise<string> {
