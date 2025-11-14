@@ -1,5 +1,8 @@
 // app/admin/blog-terms/page.tsx
 import { adminDb } from "@/lib/firebaseAdmin";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { ADMIN_SESSION_COOKIE_NAME } from "@/lib/adminAuth";
 
 export const revalidate = 0;
 
@@ -13,6 +16,14 @@ type BlogTerm = {
 };
 
 export default async function AdminBlogTermsPage() {
+  // Basit admin oturum kontrolü
+  const cookieStore = cookies();
+  const session = cookieStore.get(ADMIN_SESSION_COOKIE_NAME);
+
+  if (!session || session.value !== "1") {
+    redirect("/admin/login");
+  }
+
   // Firestore'dan son 50 terim blog yazısını çek
   const snap = await adminDb
     .collection("blog_posts")
@@ -53,7 +64,7 @@ export default async function AdminBlogTermsPage() {
         {/* Kayıt yoksa */}
         {items.length === 0 ? (
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-300">
-            Şu anda kayıtlı hiçbir terim blog yazısı bulunamadı. Cron-job.org üzerinden
+            Şu anda kayıtlı hiçbir terim blog yazısı bulunamadı. cron-job.org üzerinden
             <span className="font-mono text-sky-300">
               {" /api/cron/blog "}
             </span>
