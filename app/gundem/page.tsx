@@ -74,7 +74,7 @@ export default async function GundemPage() {
           {/* SOL SÜTUN: MESAJ FORMU + AKIŞ */}
           <section className="space-y-4">
             {/* Mesaj yazma alanı – şimdilik pasif tasarım */}
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 h-full">
+            <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-sm font-semibold text-slate-100">
                   Gündeme mesaj bırak
@@ -199,7 +199,7 @@ export default async function GundemPage() {
           {/* SAĞ SÜTUN: HAFTANIN ANKETİ + KUTULAR */}
           <aside className="w-full space-y-4">
             {/* Haftanın Anketi - geniş kart */}
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 h-full">
+            <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
               <h2 className="text-sm uppercase tracking-[0.18em] text-slate-300 mb-1">
                 Haftanın Anketi
               </h2>
