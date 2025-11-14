@@ -20,36 +20,15 @@ const SITE_NAME =
     ? process.env.NEXT_PUBLIC_SITE_NAME
     : "SkyNews.Tr";
 
-async function getBlogPost(slug: string, idFromQuery?: string | null) {
-  // Önce query string'den gelen id ile dene
-  if (idFromQuery) {
-    const doc = await adminDb.collection("blog_posts").doc(idFromQuery).get();
-    if (doc.exists) {
-      const data = doc.data() || {};
-      return {
-        id: doc.id,
-        title: data.title || "Başlıksız yazı",
-        slug: data.slug || slug,
-        summary: data.summary || data.metaDesc || null,
-        html: data.html || null,
-        publishedAt: data.publishedAt || null,
-        seoTitle: data.seoTitle || null,
-        metaDesc: data.metaDesc || null,
-        mainImageUrl: data.mainImageUrl || null,
-      } as BlogPost;
-    }
-  }
-
-  // Id yoksa veya bulunamazsa slug ile ara
+async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
+  // Sadece slug ile arıyoruz – ekstra id karmaşası yok
   const snap = await adminDb
     .collection("blog_posts")
     .where("slug", "==", slug)
     .limit(1)
     .get();
 
-  if (snap.empty) {
-    return null;
-  }
+  if (snap.empty) return null;
 
   const doc = snap.docs[0];
   const data = doc.data() || {};
@@ -64,22 +43,18 @@ async function getBlogPost(slug: string, idFromQuery?: string | null) {
     seoTitle: data.seoTitle || null,
     metaDesc: data.metaDesc || null,
     mainImageUrl: data.mainImageUrl || null,
-  } as BlogPost;
+  };
 }
 
 export const revalidate = 300;
 
 export default async function BlogDetailPage({
   params,
-  searchParams,
 }: {
   params: { slug: string };
-  searchParams?: { id?: string };
 }) {
   const slug = params.slug;
-  const idFromQuery = searchParams?.id ?? null;
-
-  const post = await getBlogPost(slug, idFromQuery);
+  const post = await getBlogPostBySlug(slug);
 
   if (!post) {
     notFound();
