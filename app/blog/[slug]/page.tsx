@@ -19,7 +19,9 @@ const SITE_NAME =
     ? process.env.NEXT_PUBLIC_SITE_NAME
     : "SkyNews.Tr";
 
-// Önce id ile dene, olmazsa slug ile dene
+// 1) id varsa id ile dene
+// 2) slug doluysa slug ile dene
+// 3) ikisi de boşsa (veya bulunamazsa) ilk blog_posts dokümanını getir (fallback)
 async function safeGetBlogPost(params: {
   slug: string;
   idFromQuery?: string | null;
@@ -28,7 +30,7 @@ async function safeGetBlogPost(params: {
 
   try {
     // 1) URL'deki ?id parametresi ile dokümanı doğrudan çek
-    if (idFromQuery) {
+    if (idFromQuery && idFromQuery.trim()) {
       const doc = await adminDb.collection("blog_posts").doc(idFromQuery).get();
       if (doc.exists) {
         const data = doc.data() || {};
@@ -46,22 +48,49 @@ async function safeGetBlogPost(params: {
       }
     }
 
-    // 2) id bulunamazsa slug ile aramayı dene
-    const snap = await adminDb
+    // 2) Slug doluysa slug ile aramayı dene
+    if (slug && slug.trim()) {
+      const snapBySlug = await adminDb
+        .collection("blog_posts")
+        .where("slug", "==", slug)
+        .limit(1)
+        .get();
+
+      if (!snapBySlug.empty) {
+        const doc = snapBySlug.docs[0];
+        const data = doc.data() || {};
+        return {
+          id: doc.id,
+          title: data.title || "Başlıksız yazı",
+          slug: data.slug || slug,
+          summary: data.summary || data.metaDesc || null,
+          html: data.html || null,
+          publishedAt: data.publishedAt || null,
+          seoTitle: data.seoTitle || null,
+          metaDesc: data.metaDesc || null,
+          mainImageUrl: data.mainImageUrl || null,
+        };
+      }
+    }
+
+    // 3) Buraya geldiysek id de slug da işimize yaramadı.
+    // Koleksiyondan ilk dokümanı fallback olarak getir.
+    const fallbackSnap = await adminDb
       .collection("blog_posts")
-      .where("slug", "==", slug)
       .limit(1)
       .get();
 
-    if (snap.empty) return null;
+    if (fallbackSnap.empty) {
+      return null;
+    }
 
-    const doc = snap.docs[0];
+    const doc = fallbackSnap.docs[0];
     const data = doc.data() || {};
 
     return {
       id: doc.id,
       title: data.title || "Başlıksız yazı",
-      slug: data.slug || slug,
+      slug: data.slug || slug || doc.id,
       summary: data.summary || data.metaDesc || null,
       html: data.html || null,
       publishedAt: data.publishedAt || null,
@@ -111,7 +140,7 @@ export default async function BlogDetailPage({
             oluştu.
           </p>
           <p className="text-[11px] text-slate-500">
-            Debug bilgisi — slug: <code>{slug}</code>{" "}
+            Debug bilgisi — slug: <code>{slug || "(boş)"}</code>
             {idFromQuery && (
               <>
                 {" "}
