@@ -96,4 +96,158 @@ async function generateHtmlWithGemini(term: TermDefinition): Promise<{
   if (!apiKey) {
     // Gemini yoksa basit bir fallback dön
     return {
-      html: bas
+      html: baseHtmlFallback,
+      imagePrompt: defaultImagePrompt,
+    };
+  }
+
+  try {
+    const systemAndUserPrompt = [
+      `Sen ${SITE_NAME} için yazı hazırlayan profesyonel bir havacılık editörüsün.`,
+      `Konuyu, sahada çalışan ramp, ATC, yer hizmeti, kabin ve teknik ekiplerin anlayacağı sade ama teknik olarak doğru bir dille anlat.`,
+      ``,
+      `Konu başlığı: "${term.title}"`,
+      `Kısa açıklama: "${term.shortDescription}"`,
+      `Uzmanlık bağlamı: ${term.expertHint}`,
+      ``,
+      `ÇIKTI FORMATIN:`,
+      `• Sadece HTML gövdesi üret (başlık etiketi <h1> yazma, sadece <p>, <ul>, <li>, <strong> vb. kullan).`,
+      `• 5–7 paragraf olsun.`,
+      `• Gerektiğinde madde işaretli listeler kullanabilirsin.`,
+      `• Türkçe yaz.`,
+      ``,
+      `Ayrıca, bu konuyu temsil edecek bir AI görseli için çok kısa bir İngilizce "image prompt" üret (tek cümle).`,
+      `Bu image prompt'u da en sonda ayrı bir satırda şu formatta yaz:`,
+      `"IMAGE_PROMPT: <prompt burada>"`,
+    ].join("\n");
+
+    const body = {
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: systemAndUserPrompt }],
+        },
+      ],
+    };
+
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }
+    );
+
+    if (!resp.ok) {
+      console.error("Gemini blog call failed:", await resp.text());
+      return {
+        html: baseHtmlFallback,
+        imagePrompt: defaultImagePrompt,
+      };
+    }
+
+    const data = await resp.json();
+    const parts: string[] =
+      data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "") ?? [];
+    let fullText = parts.join("\n").trim();
+
+    let imagePrompt = defaultImagePrompt;
+
+    // IMAGE_PROMPT satırını ayıklayalım
+    const imagePromptMatch = fullText.match(/IMAGE_PROMPT:\s*(.+)$/im);
+    if (imagePromptMatch) {
+      imagePrompt = imagePromptMatch[1].trim();
+      fullText = fullText.replace(/IMAGE_PROMPT:\s*.+$/im, "").trim();
+    }
+
+    const html = fullText || baseHtmlFallback;
+
+    return {
+      html,
+      imagePrompt,
+    };
+  } catch (err) {
+    console.error("Error calling Gemini for blog:", err);
+    return {
+      html: baseHtmlFallback,
+      imagePrompt: defaultImagePrompt,
+    };
+  }
+}
+
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url);
+  const secret = url.searchParams.get("secret");
+  const overrideKey = url.searchParams.get("termKey") || null;
+
+  // Basit secret kontrolü
+  if (!secret || secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+
+  const today = new Date();
+  const term = pickTermOfTheDay(today, overrideKey);
+
+  try {
+    // Aynı terim için bugün zaten blog yazısı oluşturulmuş mu kontrol et
+    const yyyyMmDd = today.toISOString().slice(0, 10); // 2025-11-14
+    const existingSnap = await adminDb
+      .collection("blog_posts")
+      .where("termKey", "==", term.termKey)
+      .where("publishedDate", "==", yyyyMmDd)
+      .limit(1)
+      .get();
+
+    if (!existingSnap.empty) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: "Today’s blog post for this term already exists.",
+        termKey: term.termKey,
+        date: yyyyMmDd,
+      });
+    }
+
+    // Gemini'den HTML + imagePrompt al
+    const { html, imagePrompt } = await generateHtmlWithGemini(term);
+    const summary = extractSummaryFromHtml(html, 260);
+
+    const docRef = await adminDb.collection("blog_posts").add({
+      termKey: term.termKey,
+      title: term.title,
+      slug: term.slug,
+      summary,
+      html,
+      seoTitle: term.title,
+      metaDesc: summary,
+      category: "term",
+      source: "auto-gemini",
+      imagePrompt,
+      mainImageUrl: null, // Daha sonra AI veya Pexels/Unsplash ile dolduracağız
+      publishedAt: today.toISOString(),
+      publishedDate: yyyyMmDd,
+      createdAt: new Date().toISOString(),
+    });
+
+    return NextResponse.json({
+      ok: true,
+      createdId: docRef.id,
+      termKey: term.termKey,
+      slug: term.slug,
+      title: term.title,
+      publishedDate: yyyyMmDd,
+    });
+  } catch (err) {
+    console.error("Error in /api/cron/blog:", err);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Internal error while creating blog post",
+      },
+      { status: 500 }
+    );
+  }
+}
