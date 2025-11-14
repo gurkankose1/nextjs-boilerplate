@@ -10,6 +10,7 @@ type MessageDoc = {
   company: string | null;
   message: string;
   createdAt: string; // ISO string
+  status?: string;
 };
 
 type ApiListOk = {
@@ -22,22 +23,17 @@ type ApiErr = {
   error: string;
 };
 
-// Basit küfür filtresi – listeyi istediğin gibi genişletebilirsin
-const BAD_WORDS = [
-  "küfür",
-  "salak",
-  "aptal",
-];
+const BAD_WORDS = ["küfür", "salak", "aptal"];
 
 function containsBadWords(text: string): boolean {
   const lowered = text.toLowerCase();
   return BAD_WORDS.some((w) => lowered.includes(w));
 }
 
-// Son 50 mesajı getir
+// SON 50 MESAJI GETİR
 export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
   try {
-      const snap = await adminDb
+    const snap = await adminDb
       .collection("gundem_messages")
       .orderBy("createdAt", "desc")
       .limit(50)
@@ -59,6 +55,7 @@ export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
           createdAt:
             (data.createdAt as string | undefined) ||
             new Date().toISOString(),
+          status,
         };
       })
       .filter((m): m is MessageDoc & { id: string } => m !== null);
@@ -70,7 +67,6 @@ export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
       },
       { status: 200 }
     );
-
   } catch (error: any) {
     console.error("[gundem/messages][GET] error:", error);
     return NextResponse.json(
@@ -83,7 +79,7 @@ export async function GET(): Promise<NextResponse<ApiListOk | ApiErr>> {
   }
 }
 
-// Yeni mesaj oluştur
+// YENİ MESAJ OLUŞTUR
 export async function POST(
   req: NextRequest
 ): Promise<NextResponse<ApiListOk | ApiErr>> {
@@ -130,18 +126,16 @@ export async function POST(
       );
     }
 
-    // Basit anti-spam: Aynı takma ad 60 saniyede en fazla 3 mesaj atabilsin
-       const now = Date.now();
+    // ANTI-SPAM: aynı takma ad 1 dakikada en fazla 3 mesaj
+    const now = Date.now();
     const oneMinuteAgoIso = new Date(now - 60_000).toISOString();
 
-    // Sadece displayName'e göre sorgu (tek alan) -> composite index gerektirmez
     const recentSnap = await adminDb
       .collection("gundem_messages")
       .where("displayName", "==", displayName)
       .limit(10)
       .get();
 
-    // Son 1 dakika içinde atılan mesajları kod tarafında süzüyoruz
     const recentMessages = recentSnap.docs.filter((doc) => {
       const data = doc.data() as { createdAt?: string };
       const createdAtStr =
@@ -161,7 +155,6 @@ export async function POST(
       );
     }
 
-
     const nowIso = new Date(now).toISOString();
 
     await adminDb.collection("gundem_messages").add({
@@ -172,28 +165,33 @@ export async function POST(
       status: "visible",
     });
 
-    // Mesaj eklendikten sonra güncel listeyi döndür (son 50)
+    // EKLEME SONRASI: güncel listeyi tekrar çek (index istemeyen sorgu)
     const snap = await adminDb
       .collection("gundem_messages")
-      .where("status", "==", "visible")
       .orderBy("createdAt", "desc")
       .limit(50)
       .get();
 
-    const messages: (MessageDoc & { id: string })[] = snap.docs.map((doc) => {
-      const data = doc.data() as Record<string, unknown>;
+    const messages: (MessageDoc & { id: string })[] = snap.docs
+      .map((doc) => {
+        const data = doc.data() as Record<string, unknown>;
 
-      return {
-        id: doc.id,
-        displayName:
-          (data.displayName as string | undefined) || "Anonim kullanıcı",
-        company: (data.company as string | undefined) ?? null,
-        message: (data.message as string | undefined) || "",
-        createdAt:
-          (data.createdAt as string | undefined) ||
-          new Date().toISOString(),
-      };
-    });
+        const status = (data.status as string | undefined) ?? "visible";
+        if (status !== "visible") return null;
+
+        return {
+          id: doc.id,
+          displayName:
+            (data.displayName as string | undefined) || "Anonim kullanıcı",
+          company: (data.company as string | undefined) ?? null,
+          message: (data.message as string | undefined) || "",
+          createdAt:
+            (data.createdAt as string | undefined) ||
+            new Date().toISOString(),
+          status,
+        };
+      })
+      .filter((m): m is MessageDoc & { id: string } => m !== null);
 
     return NextResponse.json(
       {
