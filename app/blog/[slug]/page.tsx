@@ -19,33 +19,41 @@ type BlogPost = {
 
 export default async function BlogPostPage({
   params,
+  searchParams,
 }: {
   params: { slug: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
 }) {
-  const slugOrIdRaw = params.slug;
-  const slugOrId = decodeURIComponent(slugOrIdRaw);
+  const slugFromPath = decodeURIComponent(params.slug);
+  const idParam = searchParams && typeof searchParams.id === "string"
+    ? searchParams.id
+    : undefined;
 
   let data: BlogPost | null = null;
 
   try {
-    // 1) Önce slug alanına göre ara
-    const bySlugSnap = await adminDb
-      .collection("blog_posts")
-      .where("slug", "==", slugOrId)
-      .limit(1)
-      .get();
-
-    if (!bySlugSnap.empty) {
-      data = bySlugSnap.docs[0].data() as BlogPost;
-    } else {
-      // 2) Eğer slug ile bulunamadıysa, doc id olarak dene
+    // 1) Eğer URL'de ?id=docId varsa, önce doc id ile dene
+    if (idParam) {
       const byIdDoc = await adminDb
         .collection("blog_posts")
-        .doc(slugOrId)
+        .doc(idParam)
         .get();
 
       if (byIdDoc.exists) {
         data = byIdDoc.data() as BlogPost;
+      }
+    }
+
+    // 2) Hâlâ data yoksa, slug alanına göre dene
+    if (!data) {
+      const bySlugSnap = await adminDb
+        .collection("blog_posts")
+        .where("slug", "==", slugFromPath)
+        .limit(1)
+        .get();
+
+      if (!bySlugSnap.empty) {
+        data = bySlugSnap.docs[0].data() as BlogPost;
       }
     }
   } catch (err) {
@@ -53,7 +61,7 @@ export default async function BlogPostPage({
     data = null;
   }
 
-  // Hiç kayıt bulunamazsa basit bir hata mesajı göster
+  // Hiç kayıt bulunamadıysa basit mesaj göster
   if (!data) {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-50">
@@ -67,12 +75,10 @@ export default async function BlogPostPage({
               Havacılık Terimleri
             </Link>
           </div>
-          <h1 className="text-2xl font-semibold mb-4">
-            İçerik bulunamadı
-          </h1>
+          <h1 className="text-2xl font-semibold mb-4">İçerik bulunamadı</h1>
           <p className="text-slate-300">
-            Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata
-            oluştu. Birkaç dakika sonra tekrar deneyebilirsin.
+            Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata oluştu.
+            Birkaç dakika sonra tekrar deneyebilirsin.
           </p>
         </div>
       </main>
@@ -112,8 +118,7 @@ export default async function BlogPostPage({
           </h1>
           {published && (
             <p className="text-sm text-slate-400">
-              Yayın tarihi:{" "}
-              <time dateTime={published}>{published}</time>
+              Yayın tarihi: <time dateTime={published}>{published}</time>
             </p>
           )}
           {data.summary && (
