@@ -7,7 +7,7 @@ import { ADMIN_SESSION_COOKIE_NAME } from "@/lib/adminAuth";
 export const revalidate = 0;
 
 type PageProps = {
-  params: { id: string };
+  params: { id?: string | string[] };
 };
 
 export default async function AdminBlogTermDetailPage({ params }: PageProps) {
@@ -19,12 +19,47 @@ export default async function AdminBlogTermDetailPage({ params }: PageProps) {
     redirect("/admin/login");
   }
 
-  const id = params.id;
+  // 2) URL'den gelen id parametresini güvenli şekilde normalize et
+  const rawId = params?.id;
+  const id =
+    typeof rawId === "string"
+      ? rawId
+      : Array.isArray(rawId)
+      ? rawId[0]
+      : "";
 
-  // 2) Firestore'dan ilgili dokümanı çek (hata üretmemesi için çok defansif)
+  const normalizedId = (id ?? "").trim();
+
+  // Eğer id boşsa, Firestore'a hiç gitmeden kullanıcıya göster
+  if (!normalizedId) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="mx-auto w-full max-w-3xl px-4 py-10">
+          <h1 className="mb-4 text-xl font-semibold">
+            Geçersiz ID parametresi
+          </h1>
+          <p className="text-sm text-slate-300 mb-3">
+            URL&apos;den alınan <code className="font-mono">id</code> parametresi
+            boş veya kullanılamaz durumda. Bu nedenle Firestore&apos;a istek
+            yapılmadı.
+          </p>
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+            <div className="text-xs text-slate-400 mb-1">
+              params.id (ham değer):
+            </div>
+            <pre className="max-h-64 overflow-auto rounded bg-slate-950/80 p-2 font-mono text-[11px] text-sky-200">
+{JSON.stringify(rawId, null, 2)}
+            </pre>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // 3) Firestore'dan ilgili dokümanı çek
   let data: any = null;
   try {
-    const docRef = adminDb.collection("blog_posts").doc(id);
+    const docRef = adminDb.collection("blog_posts").doc(normalizedId);
     const snap = await docRef.get();
 
     if (!snap.exists) {
@@ -38,7 +73,7 @@ export default async function AdminBlogTermDetailPage({ params }: PageProps) {
               blog_posts koleksiyonunda bu ID ile bir kayıt bulunamadı:
             </p>
             <p className="mt-2 font-mono text-xs text-slate-200 break-all">
-              {id}
+              {normalizedId}
             </p>
           </div>
         </main>
@@ -47,26 +82,28 @@ export default async function AdminBlogTermDetailPage({ params }: PageProps) {
 
     data = snap.data() || null;
   } catch (err: any) {
-    // Firestore tarafında bir exception olursa, sayfayı çökerteceğine
-    // ekranda basit bir hata gösterelim.
     return (
       <main className="min-h-screen bg-slate-950 text-slate-50">
         <div className="mx-auto w-full max-w-3xl px-4 py-10">
           <h1 className="text-xl font-semibold mb-4">
             Sunucu tarafında bir hata oluştu
           </h1>
-          <p className="text-sm text-slate-300">
+          <p className="text-sm text-slate-300 mb-3">
             Firestore&apos;dan doküman okunurken bir sorun oluştu.
           </p>
-          <p className="mt-4 text-xs text-red-300 whitespace-pre-wrap">
+          <p className="mt-2 text-xs text-red-300 whitespace-pre-wrap">
             {String(err?.message || err)}
           </p>
+          <div className="mt-4 text-[11px] text-slate-500">
+            Doküman ID (normalize edilmiş):{" "}
+            <span className="font-mono text-slate-200">{normalizedId}</span>
+          </div>
         </div>
       </main>
     );
   }
 
-  // 3) Veriyi ham JSON olarak göster
+  // 4) Veriyi ham JSON olarak göster
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50">
       <div className="mx-auto w-full max-w-4xl px-4 py-8">
@@ -89,7 +126,7 @@ export default async function AdminBlogTermDetailPage({ params }: PageProps) {
             Doküman ID
           </h2>
           <p className="font-mono text-[11px] text-slate-200 break-all mb-4">
-            {id}
+            {normalizedId}
           </p>
 
           <h2 className="mb-2 text-sm font-semibold text-slate-50">
