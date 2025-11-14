@@ -1,109 +1,96 @@
 // app/blog/page.tsx
-import Link from "next/link";
 import { adminDb } from "@/lib/firebaseAdmin";
+import Link from "next/link";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
 
 type BlogPost = {
   id: string;
   title: string;
   slug: string;
-  summary?: string | null;
-  publishedAt?: string | null;
-  seoTitle?: string | null;
-  metaDesc?: string | null;
+  summary?: string;
+  publishedDate?: string;
+  publishedAt?: string;
+  termKey?: string;
 };
 
-const SITE_NAME =
-  process.env.NEXT_PUBLIC_SITE_NAME && process.env.NEXT_PUBLIC_SITE_NAME.trim()
-    ? process.env.NEXT_PUBLIC_SITE_NAME
-    : "SkyNews.Tr";
+export default async function BlogListPage() {
+  let posts: BlogPost[] = [];
 
-export const revalidate = 120;
+  try {
+    const snap = await adminDb
+      .collection("blog_posts")
+      .orderBy("publishedAt", "desc")
+      .limit(20)
+      .get();
 
-async function getBlogPosts(): Promise<BlogPost[]> {
-  const snap = await adminDb
-    .collection("blog_posts")
-    .orderBy("publishedAt", "desc")
-    .limit(40)
-    .get();
-
-  return snap.docs.map((doc) => {
-    const data = doc.data() || {};
-    return {
-      id: doc.id,
-      title: data.title || "Başlıksız yazı",
-      slug: data.slug || doc.id,
-      summary: data.summary || data.metaDesc || null,
-      publishedAt: data.publishedAt || null,
-      seoTitle: data.seoTitle || null,
-      metaDesc: data.metaDesc || null,
-    };
-  });
-}
-
-export default async function BlogPage() {
-  const posts = await getBlogPosts();
+    posts = snap.docs.map((doc) => {
+      const data = doc.data() as Omit<BlogPost, "id">;
+      return {
+        id: doc.id,
+        ...data,
+      };
+    });
+  } catch (err) {
+    console.error("BLOG LIST FIRESTORE ERROR:", err);
+    posts = [];
+  }
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50">
-      <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-6">
-        {/* ÜST BAŞLIK */}
-        <header className="border-b border-slate-800 pb-4 mb-5">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-sky-400 mb-1">
-            Havacılık Terimleri • Blog
-          </p>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">
-            {SITE_NAME} Havacılık Terimleri ve Bilgi Köşesi
-          </h1>
-          <p className="mt-1 text-xs text-slate-400 sm:text-sm">
-            Her gün havacılıkla ilgili bir kavramı sade ve teknik olarak doğru
-            biçimde açıklayan kısa yazılar: pushback nedir, ATC ne iş yapar,
-            PBB nasıl çalışır, uçaklarda denge ve ağırlık merkezi, slot,
-            NOTAM, SID/STAR, daha fazlası...
-          </p>
-        </header>
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        {/* Breadcrumb */}
+        <div className="mb-4 text-sm text-slate-400">
+          <Link href="/" className="hover:text-sky-400">
+            Ana sayfa
+          </Link>
+          <span className="mx-1">/</span>
+          <span className="text-slate-300">Havacılık Terimleri</span>
+        </div>
 
-        {/* LİSTE */}
+        <h1 className="mb-6 text-2xl font-semibold tracking-tight sm:text-3xl">
+          Havacılık Terimleri Blogu
+        </h1>
+
         {posts.length === 0 ? (
-          <p className="text-xs text-slate-400">
-            Henüz blog yazısı bulunmuyor. Otomatik terim üretimi devreye
-            alındığında bu sayfa her gün yeni bir içerikle güncellenecek.
+          <p className="text-slate-300">
+            Henüz oluşturulmuş bir terim yazısı yok. Cron job çalıştığında burada görünecek.
           </p>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {posts.map((post) => (
-              <Link
-                key={post.id}
-                href={`/blog/${encodeURIComponent(post.slug)}?id=${encodeURIComponent(
-                  post.id
-                )}`}
-                className="group flex flex-col justify-between rounded-xl border border-slate-800 bg-slate-900/60 p-3 transition hover:border-sky-500/70 hover:bg-slate-900"
-              >
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="rounded-full border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-sky-300">
-                      Havacılık Terimi
-                    </span>
-                    {post.publishedAt && (
-                      <span className="text-[10px] text-slate-500">
-                        {new Date(post.publishedAt).toLocaleDateString("tr-TR", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "numeric",
-                        })}
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="mb-1 text-sm font-semibold text-slate-50 group-hover:text-sky-200">
-                    {post.title}
-                  </h2>
+          <div className="space-y-4">
+            {posts.map((post) => {
+              const published =
+                post.publishedDate ||
+                (post.publishedAt ? post.publishedAt.slice(0, 10) : undefined);
+
+              // Detay sayfasına link:
+              // slug + id query paramını birlikte gönderiyoruz
+              const href = `/blog/${encodeURIComponent(
+                post.slug
+              )}?id=${encodeURIComponent(post.id)}`;
+
+              return (
+                <Link
+                  key={post.id}
+                  href={href}
+                  className="block rounded-xl border border-slate-800 bg-slate-900/40 p-4 hover:border-sky-500/70 hover:bg-slate-900/70 transition"
+                >
+                  <h2 className="text-lg font-semibold">{post.title}</h2>
+                  {published && (
+                    <p className="text-xs text-slate-400">
+                      Yayın tarihi: <time dateTime={published}>{published}</time>
+                    </p>
+                  )}
                   {post.summary && (
-                    <p className="text-[11px] text-slate-300 line-clamp-3">
+                    <p className="mt-2 text-sm text-slate-300">
                       {post.summary}
                     </p>
                   )}
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>
