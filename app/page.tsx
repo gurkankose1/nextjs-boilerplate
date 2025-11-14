@@ -397,7 +397,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               )}
             </div>
 
-          /* SAĞ KOLON: EN ÇOK OKUNANLAR + HAFTANIN ANKETİ */}
+       {/* SAĞ KOLON: EN ÇOK OKUNANLAR + HAFTANIN ANKETİ */}
             <aside className="space-y-4">
               {/* EN ÇOK OKUNANLAR */}
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
