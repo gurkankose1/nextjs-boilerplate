@@ -132,17 +132,26 @@ export async function POST(
     }
 
     // Basit anti-spam: Aynı takma ad 60 saniyede en fazla 3 mesaj atabilsin
-    const now = Date.now();
+       const now = Date.now();
     const oneMinuteAgoIso = new Date(now - 60_000).toISOString();
 
+    // Sadece displayName'e göre sorgu (tek alan) -> composite index gerektirmez
     const recentSnap = await adminDb
       .collection("gundem_messages")
       .where("displayName", "==", displayName)
-      .where("createdAt", ">=", oneMinuteAgoIso)
-      .limit(5)
+      .limit(10)
       .get();
 
-    if (recentSnap.size >= 3) {
+    // Son 1 dakika içinde atılan mesajları kod tarafında süzüyoruz
+    const recentMessages = recentSnap.docs.filter((doc) => {
+      const data = doc.data() as { createdAt?: string };
+      const createdAtStr =
+        typeof data.createdAt === "string" ? data.createdAt : undefined;
+      if (!createdAtStr) return false;
+      return createdAtStr >= oneMinuteAgoIso;
+    });
+
+    if (recentMessages.length >= 3) {
       return NextResponse.json(
         {
           ok: false,
@@ -152,6 +161,7 @@ export async function POST(
         { status: 429 }
       );
     }
+
 
     const nowIso = new Date(now).toISOString();
 
