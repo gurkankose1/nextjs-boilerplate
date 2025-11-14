@@ -1,7 +1,10 @@
 // app/blog/[slug]/page.tsx
 import { adminDb } from "@/lib/firebaseAdmin";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
 
 type BlogPost = {
   title: string;
@@ -21,22 +24,50 @@ export default async function BlogPostPage({
 }) {
   const { slug } = params;
 
-  // 1) Firestore'dan slug'a göre doğru dokümanı çek
-  const snap = await adminDb
-    .collection("blog_posts")
-    .where("slug", "==", slug)
-    .limit(1)
-    .get();
+  let data: BlogPost | null = null;
 
-  if (snap.empty) {
-    // Slug yanlışsa 404
-    notFound();
+  try {
+    const snap = await adminDb
+      .collection("blog_posts")
+      .where("slug", "==", slug)
+      .limit(1)
+      .get();
+
+    if (!snap.empty) {
+      data = snap.docs[0].data() as BlogPost;
+    }
+  } catch (err) {
+    console.error("BLOG DETAIL PAGE FIRESTORE ERROR:", err);
+    data = null;
   }
 
-  const doc = snap.docs[0];
-  const data = doc.data() as BlogPost;
+  // Hiç kayıt bulunamazsa basit bir hata mesajı göster
+  if (!data) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50">
+        <div className="mx-auto max-w-5xl px-4 py-8">
+          <div className="mb-4 text-sm text-slate-400">
+            <Link href="/" className="hover:text-sky-400">
+              Ana sayfa
+            </Link>
+            <span className="mx-1">/</span>
+            <Link href="/blog" className="hover:text-sky-400">
+              Havacılık Terimleri
+            </Link>
+          </div>
+          <h1 className="text-2xl font-semibold mb-4">
+            İçerik bulunamadı
+          </h1>
+          <p className="text-slate-300">
+            Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata oluştu.
+            Birkaç dakika sonra tekrar deneyebilirsin.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
-  // 2) HTML içeriği al, varsa <body> sarmalayıcısını temizle
+  // HTML içeriğini al ve <body> sarmalayıcılarını temizle
   let html = data.html || "";
   html = html.replace(/<\/?body[^>]*>/gi, "").trim();
 
@@ -57,10 +88,12 @@ export default async function BlogPostPage({
             Havacılık Terimleri
           </Link>
           <span className="mx-1">/</span>
-          <span className="text-slate-300">İçerik</span>
+          <span className="text-slate-300">
+            {data.title ?? "Detay"}
+          </span>
         </div>
 
-        {/* Başlık + tarih */}
+        {/* Başlık + tarih + özet */}
         <header className="mb-6 space-y-2">
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
             {data.title}
@@ -68,9 +101,7 @@ export default async function BlogPostPage({
           {published && (
             <p className="text-sm text-slate-400">
               Yayın tarihi:{" "}
-              <time dateTime={published}>
-                {published}
-              </time>
+              <time dateTime={published}>{published}</time>
             </p>
           )}
           {data.summary && (
