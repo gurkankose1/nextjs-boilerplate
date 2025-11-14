@@ -22,19 +22,31 @@ export default async function BlogPostPage({
 }: {
   params: { slug: string };
 }) {
-  const { slug } = params;
+  const slugOrIdRaw = params.slug;
+  const slugOrId = decodeURIComponent(slugOrIdRaw);
 
   let data: BlogPost | null = null;
 
   try {
-    const snap = await adminDb
+    // 1) Önce slug alanına göre ara
+    const bySlugSnap = await adminDb
       .collection("blog_posts")
-      .where("slug", "==", slug)
+      .where("slug", "==", slugOrId)
       .limit(1)
       .get();
 
-    if (!snap.empty) {
-      data = snap.docs[0].data() as BlogPost;
+    if (!bySlugSnap.empty) {
+      data = bySlugSnap.docs[0].data() as BlogPost;
+    } else {
+      // 2) Eğer slug ile bulunamadıysa, doc id olarak dene
+      const byIdDoc = await adminDb
+        .collection("blog_posts")
+        .doc(slugOrId)
+        .get();
+
+      if (byIdDoc.exists) {
+        data = byIdDoc.data() as BlogPost;
+      }
     }
   } catch (err) {
     console.error("BLOG DETAIL PAGE FIRESTORE ERROR:", err);
@@ -59,8 +71,8 @@ export default async function BlogPostPage({
             İçerik bulunamadı
           </h1>
           <p className="text-slate-300">
-            Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata oluştu.
-            Birkaç dakika sonra tekrar deneyebilirsin.
+            Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata
+            oluştu. Birkaç dakika sonra tekrar deneyebilirsin.
           </p>
         </div>
       </main>
@@ -105,9 +117,7 @@ export default async function BlogPostPage({
             </p>
           )}
           {data.summary && (
-            <p className="text-sm text-slate-300">
-              {data.summary}
-            </p>
+            <p className="text-sm text-slate-300">{data.summary}</p>
           )}
         </header>
 
