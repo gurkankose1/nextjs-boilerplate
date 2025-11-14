@@ -25,9 +25,10 @@ export default async function BlogPostPage({
   searchParams?: { [key: string]: string | string[] | undefined };
 }) {
   const slugFromPath = decodeURIComponent(params.slug);
-  const idParam = searchParams && typeof searchParams.id === "string"
-    ? searchParams.id
-    : undefined;
+  const idParam =
+    searchParams && typeof searchParams.id === "string"
+      ? searchParams.id
+      : undefined;
 
   let data: BlogPost | null = null;
 
@@ -77,8 +78,8 @@ export default async function BlogPostPage({
           </div>
           <h1 className="text-2xl font-semibold mb-4">İçerik bulunamadı</h1>
           <p className="text-slate-300">
-            Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata oluştu.
-            Birkaç dakika sonra tekrar deneyebilirsin.
+            Bu terim için blog yazısı bulunamadı ya da yüklenirken bir hata
+            oluştu. Birkaç dakika sonra tekrar deneyebilirsin.
           </p>
         </div>
       </main>
@@ -106,9 +107,7 @@ export default async function BlogPostPage({
             Havacılık Terimleri
           </Link>
           <span className="mx-1">/</span>
-          <span className="text-slate-300">
-            {data.title ?? "Detay"}
-          </span>
+          <span className="text-slate-300">{data.title ?? "Detay"}</span>
         </div>
 
         {/* Başlık + tarih + özet */}
