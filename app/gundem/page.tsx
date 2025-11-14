@@ -53,7 +53,7 @@ export default async function GundemPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-6 lg:flex-row">
+     <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-6 flex flex-col gap-6 lg:grid lg:grid-cols-2">
         {/* SOL: Gündem akışı */}
         <section className="flex-1 space-y-4">
           <header className="border-b border-slate-800 pb-4 mb-2">
@@ -194,7 +194,7 @@ export default async function GundemPage() {
         </section>
 
         {/* SAĞ: Haftanın Anketi + Bilgi kutuları */}
-        <aside className="w-full max-w-xs shrink-0 space-y-4 lg:max-w-sm">
+          <aside className="w-full space-y-4">
           {/* Haftanın Anketi - daha geniş versiyon */}
           <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
             <h2 className="text-sm uppercase tracking-[0.18em] text-slate-300 mb-1">
