@@ -428,12 +428,13 @@ export function AdminBlogTermViewClient() {
             İçerik Gövdesi (HTML Düzenleme)
           </h2>
           <p className="mb-2 text-[11px] text-slate-400">
-            Buraya doğrudan HTML yazabilirsin. Örneğin:
-            <br />
-            <code className="text-[10px] text-sky-300">
-              {`<h2>Başlık</h2>`, " ", `<p><strong>Kalın metin</strong></p>`, " ", `<p style="text-align:center;">Ortalanmış paragraf</p>`}
-            </code>
-          </p>
+  Buraya doğrudan HTML yazabilirsin. Örneğin:
+  <br />
+  <code className="text-[10px] text-sky-300">
+    {`<h2>Başlık</h2> <p><strong>Kalın metin</strong></p> <p style="text-align:center;">Ortalanmış paragraf</p>`}
+  </code>
+</p>
+
           <textarea
             value={form.html}
             onChange={(e) => handleChange("html", e.target.value)}
