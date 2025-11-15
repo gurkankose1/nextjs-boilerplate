@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { adminDb } from "@/lib/firebaseAdmin";
 
+export const revalidate = 300;
+
 const SITE_NAME =
   process.env.NEXT_PUBLIC_SITE_NAME && process.env.NEXT_PUBLIC_SITE_NAME.trim()
     ? process.env.NEXT_PUBLIC_SITE_NAME
     : "SkyNews.Tr";
 
-export const revalidate = 300;
-
 function mapBlogDoc(doc: any) {
   const data = doc.data() || {};
+
   return {
     id: doc.id,
     title: data.title || "Başlıksız yazı",
@@ -27,7 +28,7 @@ function mapBlogDoc(doc: any) {
 
 async function getBlogPost(slug: string) {
   try {
-    // 1) Önce slug ile ara
+    // 1) Önce slug alanına göre ara
     if (slug && slug !== "undefined" && slug !== "null") {
       const bySlug = await adminDb
         .collection("blog_posts")
@@ -39,7 +40,7 @@ async function getBlogPost(slug: string) {
         return mapBlogDoc(bySlug.docs[0]);
       }
 
-      // 2) Slug ile bulunamadı → doküman ID'si olabilir, onu dene
+      // 2) Slug ile bulunamadıysa doc ID olma ihtimalini dene
       const byId = await adminDb.collection("blog_posts").doc(slug).get();
       if (byId.exists) {
         return mapBlogDoc(byId);
@@ -65,7 +66,36 @@ async function getBlogPost(slug: string) {
   }
 }
 
-export default async function BlogDetailPage({ params }: { params: { slug: string } }) {
+function formatDate(value: any) {
+  if (!value) return null;
+
+  try {
+    let d: Date;
+
+    // Firestore Timestamp ise
+    if (value.toDate && typeof value.toDate === "function") {
+      d = value.toDate();
+    } else {
+      d = new Date(value);
+    }
+
+    if (Number.isNaN(d.getTime())) return null;
+
+    return d.toLocaleDateString("tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch {
+    return null;
+  }
+}
+
+export default async function BlogDetailPage({
+  params,
+}: {
+  params: { slug: string };
+}) {
   const slug = params.slug;
   const post = await getBlogPost(slug);
 
@@ -82,10 +112,10 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
               Havacılık Terimleri
             </Link>
           </nav>
-          <h1 className="text-xl font-semibold text-slate-50 mb-2">
+          <h1 className="mb-2 text-xl font-semibold text-slate-50">
             İçerik bulunamadı
           </h1>
-          <p className="text-sm text-slate-400 mb-2">
+          <p className="mb-2 text-sm text-slate-400">
             Şu an için hiç blog yazısı bulunamadı. Cron ile en az bir yazı
             oluşturduktan sonra bu sayfa otomatik dolacak.
           </p>
@@ -97,14 +127,7 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
     );
   }
 
-  const published =
-    post.publishedAt && !Number.isNaN(new Date(post.publishedAt).getTime())
-      ? new Date(post.publishedAt).toLocaleDateString("tr-TR", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        })
-      : null;
+  const published = formatDate(post.publishedAt);
 
   // HTML içinden ```html ve ``` kalıntılarını temizle
   const rawHtml = post.html || "";
@@ -126,14 +149,14 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
             Havacılık Terimleri
           </Link>
           <span className="mx-1">/</span>
-          <span className="text-slate-300 line-clamp-1 align-middle">
+          <span className="align-middle line-clamp-1 text-slate-300">
             {post.title}
           </span>
         </nav>
 
         {/* Başlık */}
         <header className="mb-6 border-b border-slate-800 pb-4">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-sky-400 mb-1">
+          <p className="mb-1 text-[11px] uppercase tracking-[0.22em] text-sky-400">
             Havacılık Terimi • Blog
           </p>
           <h1 className="text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">
@@ -162,11 +185,11 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
             <img
               src={post.mainImageUrl}
               alt={post.title}
-              className="w-full h-[320px] object-cover object-center rounded-xl shadow-lg shadow-slate-900/50"
+              className="h-[320px] w-full rounded-xl object-cover object-center shadow-lg shadow-slate-900/50"
             />
           </div>
         ) : (
-          <div className="mb-6 h-40 w-full rounded-2xl border border-slate-800 bg-gradient-to-br from-sky-900/70 via-slate-900 to-slate-950 flex items-center justify-center">
+          <div className="mb-6 flex h-40 w-full items-center justify-center rounded-2xl border border-slate-800 bg-gradient-to-br from-sky-900/70 via-slate-900 to-slate-950">
             <span className="text-[11px] text-slate-300">
               Bu terim için AI görseli yakında eklenecek.
             </span>
