@@ -1,48 +1,40 @@
 // app/api/admin/login/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import {
-  validateAdminCredentials,
-  ADMIN_SESSION_COOKIE_NAME,
-} from "@/lib/adminAuth";
+import { cookies } from "next/headers";
+import { ADMIN_SESSION_COOKIE_NAME } from "@/lib/adminAuth";
+
+const ADMIN_USER = process.env.ADMIN_USER || "admin";
+const ADMIN_PASS = process.env.ADMIN_PASS || "Gg.113355";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { username, password } = body as {
-      username?: string;
-      password?: string;
-    };
+    const formData = await req.formData();
+    const username = String(formData.get("username") || "").trim();
+    const password = String(formData.get("password") || "").trim();
 
-    if (!username || !password) {
+    if (username !== ADMIN_USER || password !== ADMIN_PASS) {
       return NextResponse.json(
-        { ok: false, error: "Eksik bilgi" },
-        { status: 400 }
-      );
-    }
-
-    const valid = validateAdminCredentials(username, password);
-    if (!valid) {
-      return NextResponse.json(
-        { ok: false, error: "Kullanıcı adı veya şifre hatalı" },
+        { ok: false, error: "Geçersiz kullanıcı adı veya şifre" },
         { status: 401 }
       );
     }
 
-    const res = NextResponse.json({ ok: true });
-
-    res.cookies.set(ADMIN_SESSION_COOKIE_NAME, "1", {
+    // Cookie TÜM site için geçerli
+    const cookieStore = await cookies();
+    cookieStore.set(ADMIN_SESSION_COOKIE_NAME, "1", {
       httpOnly: true,
       secure: true,
       sameSite: "lax",
-      path: "/admin",
-      maxAge: 60 * 60 * 8, // 8 saat
+      path: "/",            // 🔴 ÖNEMLİ: /api çağrılarında da gönderilecek
+      maxAge: 60 * 60 * 8,  // 8 saat
     });
 
-    return res;
-  } catch (err) {
-    console.error("Admin login error:", err);
+    // Başarılı login → admin ana sayfaya yönlendir
+    return NextResponse.redirect(new URL("/admin", req.url));
+  } catch (err: any) {
+    console.error("Error in /api/admin/login POST:", err);
     return NextResponse.json(
-      { ok: false, error: "Sunucu hatası" },
+      { ok: false, error: "Internal error" },
       { status: 500 }
     );
   }
