@@ -6,7 +6,7 @@ import { ADMIN_SESSION_COOKIE_NAME } from "@/lib/adminAuth";
 
 export async function POST(req: NextRequest) {
   // 1) Basit admin kontrolü (admin panelde login olmayan update atamasın)
-  const cookieStore = cookies();
+  const cookieStore = await cookies(); // <<< BURASI ÖNEMLİ: await eklendi
   const session = cookieStore.get(ADMIN_SESSION_COOKIE_NAME);
 
   if (!session || session.value !== "1") {
@@ -51,8 +51,7 @@ export async function POST(req: NextRequest) {
 
   if (typeof title === "string") {
     update.title = title;
-    // seoTitle boşsa veya güncellenmesini istiyorsak onunla hizalayalım
-    update.seoTitle = title;
+    update.seoTitle = title; // seoTitle'ı da hizala
   }
   if (typeof slug === "string") {
     update.slug = slug;
@@ -86,7 +85,7 @@ export async function POST(req: NextRequest) {
   update.updatedAt = new Date().toISOString();
 
   if (Object.keys(update).length === 1 && update.updatedAt) {
-    // Sadece updatedAt varsa, anlamlı bir update yok demektir
+    // Sadece updatedAt varsa, anlamlı bir update yok
     return NextResponse.json(
       { ok: false, error: "No updatable fields were provided." },
       { status: 400 }
