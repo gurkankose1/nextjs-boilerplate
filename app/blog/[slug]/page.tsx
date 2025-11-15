@@ -28,37 +28,28 @@ function mapBlogDoc(doc: any) {
 
 async function getBlogPost(slug: string) {
   try {
-    // 1) Önce slug alanına göre ara
-    if (slug && slug !== "undefined" && slug !== "null") {
-      const bySlug = await adminDb
-        .collection("blog_posts")
-        .where("slug", "==", slug)
-        .limit(1)
-        .get();
-
-      if (!bySlug.empty) {
-        return mapBlogDoc(bySlug.docs[0]);
-      }
-
-      // 2) Slug ile bulunamadıysa doc ID olma ihtimalini dene
-      const byId = await adminDb.collection("blog_posts").doc(slug).get();
-      if (byId.exists) {
-        return mapBlogDoc(byId);
-      }
+    if (!slug || slug === "undefined" || slug === "null") {
+      return null;
     }
 
-    // 3) Hâlâ yoksa → en son oluşturulan blog yazısını getir
-    const latestSnap = await adminDb
+    // 1) slug alanına göre ara
+    const bySlug = await adminDb
       .collection("blog_posts")
-      .orderBy("createdAt", "desc")
+      .where("slug", "==", slug)
       .limit(1)
       .get();
 
-    if (!latestSnap.empty) {
-      return mapBlogDoc(latestSnap.docs[0]);
+    if (!bySlug.empty) {
+      return mapBlogDoc(bySlug.docs[0]);
     }
 
-    // Koleksiyon gerçekten boşsa:
+    // 2) Slug ile bulunamadıysa doc ID olma ihtimalini dene
+    const byId = await adminDb.collection("blog_posts").doc(slug).get();
+    if (byId.exists) {
+      return mapBlogDoc(byId);
+    }
+
+    // 3) Bu slug için gerçekten kayıt yok
     return null;
   } catch (err) {
     console.error("Error fetching blog post:", err);
@@ -116,8 +107,8 @@ export default async function BlogDetailPage({
             İçerik bulunamadı
           </h1>
           <p className="mb-2 text-sm text-slate-400">
-            Şu an için hiç blog yazısı bulunamadı. Cron ile en az bir yazı
-            oluşturduktan sonra bu sayfa otomatik dolacak.
+            Bu slug için bir blog yazısı bulunamadı. Slug alanı mı, link mi
+            yanlış bakmak lazım.
           </p>
           <p className="text-[11px] text-slate-500">
             Debug — slug: <code>{slug || "(boş)"}</code>
