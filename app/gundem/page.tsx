@@ -196,64 +196,6 @@ export default async function GundemPage() {
             </section>
           </section>
 
-          {/* SAĞ SÜTUN: HAFTANIN ANKETİ + KUTULAR */}
-          <aside className="w-full space-y-4">
-            {/* Haftanın Anketi - geniş kart */}
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-              <h2 className="text-sm uppercase tracking-[0.18em] text-slate-300 mb-1">
-                Haftanın Anketi
-              </h2>
-              <p className="text-[11px] text-slate-400 mb-3">
-                Bu sayfada gördüğün anket tasarımı şu an sahte verilerle
-                çalışıyor. Bir sonraki adımda burayı /api/polls/active ve
-                /api/polls/vote endpoint&apos;lerine bağlayacağız.
-              </p>
-
-              <p className="text-xs font-medium text-slate-100 mb-3">
-                Sizce şu anda Türkiye&apos;de havacılık sektörünü en çok zorlayan
-                başlık hangisi?
-              </p>
-
-              <form className="space-y-1.5">
-                {[
-                  "Slot / kapasite kısıtları",
-                  "Personel planlama ve vardiya yükü",
-                  "Bakım / teknik operasyon maliyetleri",
-                  "Regülasyon ve otorite süreçleri",
-                ].map((opt, i) => (
-                  <label
-                    key={i}
-                    className="flex items-center gap-2 text-[11px] text-slate-200"
-                  >
-                    <input
-                      type="radio"
-                      name="weekly-poll-gundem-preview"
-                      className="h-3 w-3 rounded border-slate-600 bg-slate-900"
-                      disabled
-                    />
-                    <span>{opt}</span>
-                  </label>
-                ))}
-
-                <button
-                  type="button"
-                  disabled
-                  className="mt-2 w-full rounded-full bg-slate-800 text-[11px] font-semibold text-slate-400 py-2 border border-slate-700 cursor-not-allowed"
-                >
-                  Yakında oy kullanabileceksiniz
-                </button>
-              </form>
-
-              <p className="mt-3 text-[10px] text-slate-500">
-                Haftalık anket sonuçları, her hafta sonu otomatik olarak haber
-                formatında yayımlanacak:{" "}
-                <span className="text-sky-300">
-                  “Haftalık Anket Sonuçları – [Soru]”
-                </span>
-                .
-              </p>
-            </section>
-
             {/* Bilgi kutusu: Gündem kuralları */}
             <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
               <h3 className="text-xs font-semibold text-slate-100 mb-1">
