@@ -18,7 +18,7 @@ type Article = {
   mainImageUrl?: string;
 };
 
-const API_BASE =
+const API =
   process.env.NEXT_PUBLIC_API_URL ?? "https://skynews-web.vercel.app/";
 
 type FetchState =
@@ -56,10 +56,9 @@ export default function NewsArticlePageClient() {
       setState({ status: "loading" });
 
       try {
-        const base = API_BASE.replace(/\/$/, "");
-        // Anasayfada kullandığımız liste endpoint'i:
+             // Anasayfada kullandığımız liste endpoint'iyle aynı:
         // GET /articles?turkey_first=true -> Article[]
-        const url = `${base}/api/articles?turkey_first=true`;
+        const url = `${API}/articles?turkey_first=true`;
 
         const res = await fetch(url);
         if (!res.ok) {
