@@ -59,7 +59,7 @@ export default function NewsArticlePageClient() {
         const base = API_BASE.replace(/\/$/, "");
         // Anasayfada kullandığımız liste endpoint'i:
         // GET /articles?turkey_first=true -> Article[]
-        const url = `${base}/articles?turkey_first=true`;
+        const url = `${base}/api/articles?turkey_first=true`;
 
         const res = await fetch(url);
         if (!res.ok) {
