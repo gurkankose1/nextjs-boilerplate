@@ -44,12 +44,40 @@ body {
   }
 }
 
-/* Yatay scroll bar gizleme */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+/* Alt Gündem Havacılık şeridi için özel scroll bar */
+.gundem-scroll {
+  scroll-behavior: smooth;
 }
 
-.no-scrollbar {
-  -ms-overflow-style: none; /* IE ve Edge */
-  scrollbar-width: none; /* Firefox */
+/* WebKit (Chrome, Edge, Safari) */
+.gundem-scroll::-webkit-scrollbar {
+  height: 6px; /* yatay bar yüksekliği */
+}
+
+.gundem-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.9); /* bg-slate-950 tonu */
+  border-radius: 999px;
+}
+
+.gundem-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    to right,
+    rgba(56, 189, 248, 0.7),
+    rgba(59, 130, 246, 0.7)
+  ); /* sky / blue mix */
+  border-radius: 999px;
+}
+
+.gundem-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    to right,
+    rgba(56, 189, 248, 0.95),
+    rgba(59, 130, 246, 0.95)
+  );
+}
+
+/* Firefox için */
+.gundem-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.8) rgba(15, 23, 42, 0.9);
 }
