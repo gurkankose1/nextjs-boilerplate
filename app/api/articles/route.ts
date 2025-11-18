@@ -1,59 +1,85 @@
 import { NextResponse } from "next/server";
+import admin from "firebase-admin";
 
-type Article = {
-  id: string;
-  title: string;
-  summary?: string;
-  slug: string;
-  html?: string;
-  category?: string;
-  source?: string;
-  sourceUrl?: string;
-  published?: string;
-  createdAt?: string;
-  mainImageUrl?: string;
-};
+const projectId = process.env.FIREBASE_PROJECT_ID;
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
-// Şimdilik DEMO veri. İki haber ekliyorum.
-// 1) Eurofighter haberi (slug ve id aynen senin linkindeki gibi)
-// 2) Pegasus haberi (daha önce yazdığın slug + id)
-const DEMO_ARTICLES: Article[] = [
-  {
-    id: "WPsT1eXFf0YPlfQxfyL7",
-    slug: "turkiyenin-20-adet-eurofighter-typhoon-savas-ucag-satn-almndan-ra",
-    title:
-      "Türkiye’nin 20 adet Eurofighter Typhoon savaş uçağı alımı gündemde",
-    summary:
-      "Türkiye’nin 20 adet Eurofighter Typhoon savaş uçağı alımı için yürüttüğü süreçte son durum ve olası senaryolar.",
-    html: `<p>Bu sayfa şu anda <strong>demo</strong> veri ile çalışıyor.</p>
-<p>Gerçek projede bu içerik Firestore veya başka bir backend'den gelecektir.</p>
-<p>Şimdilik amaç, <code>/news/[slug]?id=...</code> yapısının sorunsuz çalıştığını kanıtlamak.</p>`,
-    category: "Savunma & Askerî Havacılık",
-    source: "Demo Kaynak",
-    sourceUrl: "https://example.com/eurofighter-demo",
-    published: new Date().toISOString(),
-    mainImageUrl:
-      "https://images.pexels.com/photos/46148/aircraft-jet-landing-cloud-46148.jpeg"
-  },
-  {
-    id: "iipfSbHhnTpqZnCI1l3t",
-    slug: "pegasus-hava-tasimaciligi-as-2025-yilinin-ilk-dokuz-ayina-iliskin-finansal-sonuclarini-acikladi-sirk",
-    title:
-      "Pegasus Hava Taşımacılığı A.Ş. 2025 yılının ilk dokuz ayına ilişkin finansal sonuçlarını açıkladı",
-    summary:
-      "Pegasus’un 2025 yılının ilk dokuz ayındaki yolcu sayısı, gelirleri ve operasyonel performansı hakkında demo içerik.",
-    html: `<p>Bu da Pegasus için eklenmiş <strong>demo</strong> bir haberdir.</p>
-<p>Gerçek veriler bağlandığında bu alan otomatik olarak gerçek HTML ile dolacak.</p>`,
-    category: "Havayolları",
-    source: "Demo Kaynak",
-    sourceUrl: "https://example.com/pegasus-demo",
-    published: new Date().toISOString(),
-    mainImageUrl:
-      "https://images.pexels.com/photos/358220/pexels-photo-358220.jpeg"
+// Firebase Admin'i tek seferlik initialize et
+if (!admin.apps.length) {
+  if (!projectId || !clientEmail || !privateKey) {
+    console.error("Firebase env değişkenleri eksik!");
+  } else {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId,
+        clientEmail,
+        privateKey
+      })
+    });
   }
-];
+}
 
-// GET /api/articles  ->  DEMO_ARTICLES dizisini döner
-export async function GET(_request: Request) {
-  return NextResponse.json(DEMO_ARTICLES);
+const db = admin.apps.length ? admin.firestore() : null;
+
+/**
+ * GET /api/articles
+ *
+ * Firestore'daki "articles" koleksiyonundan verileri çeker.
+ * Her doküman:
+ *   - doc.id  -> id
+ *   - data().slug, title, summary, html, vs.
+ */
+export async function GET(request: Request) {
+  try {
+    if (!db) {
+      return NextResponse.json(
+        {
+          error:
+            "Firebase Admin başlatılamadı. Env değişkenlerini kontrol edin."
+        },
+        { status: 500 }
+      );
+    }
+
+    const url = new URL(request.url);
+    const turkeyFirst = url.searchParams.get("turkey_first");
+
+    let query: FirebaseFirestore.Query = db
+      .collection("articles")
+      .orderBy("createdAt", "desc");
+
+    // İstersen turkey_first gibi filter'ları ileride burada kullanabiliriz
+    // if (turkeyFirst === "true") { ... }
+
+    const snap = await query.limit(200).get();
+
+    const items = snap.docs.map((doc) => {
+      const data = doc.data() as any;
+      return {
+        id: doc.id,
+        title: data.title ?? "",
+        seoTitle: data.seoTitle ?? "",
+        summary: data.summary ?? "",
+        slug: data.slug ?? "",
+        html: data.html ?? "",
+        category: data.category ?? "",
+        source: data.source ?? "",
+        sourceUrl: data.sourceUrl ?? "",
+        published: data.published ?? data.createdAt ?? null,
+        createdAt: data.createdAt ?? null,
+        mainImageUrl: data.mainImageUrl ?? ""
+      };
+    });
+
+    return NextResponse.json(items);
+  } catch (err: any) {
+    console.error("GET /api/articles hata:", err);
+    return NextResponse.json(
+      {
+        error: err?.message ?? "Bilinmeyen hata"
+      },
+      { status: 500 }
+    );
+  }
 }
