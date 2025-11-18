@@ -20,6 +20,9 @@ type PageProps = {
   params: {
     slug: string;
   };
+  searchParams?: {
+    [key: string]: string | string[] | undefined;
+  };
 };
 
 const API_BASE =
@@ -30,19 +33,19 @@ const SITE_URL =
   "https://nextjs-boilerplate-sand-mu-98.vercel.app";
 
 /**
- * Belirli bir slug'a ait haberi API'den çeker.
- * Backend'ine göre endpoint'i uyarlayabilirsin.
+ * Haberi ID ile API'den çeker.
+ * Linkin şu formatta olduğu için:
+ *   /news/...slug...?id=FIRESTORE_ID
+ * burada asıl kritik olan ID'dir, slug sadece SEO içindir.
  */
-async function fetchArticle(slug: string): Promise<Article | null> {
-  if (!slug) return null;
+async function fetchArticleById(id: string | null): Promise<Article | null> {
+  if (!id) return null;
 
   const base = API_BASE.replace(/\/$/, "");
 
-  // Eğer backend'in /articles/:slug şeklinde çalışıyorsa:
-  const url = `${base}/articles/${encodeURIComponent(slug)}`;
-
-  // Eğer backend /articles?slug=... ile çalışıyorsa üstteki satırı şu şekilde değiştir:
-  // const url = `${base}/articles?slug=${encodeURIComponent(slug)}`;
+  // Burada backend'inin tekil haber endpoint'ini ID ile çağırıyoruz.
+  // Örn: GET /articles/{id}
+  const url = `${base}/articles/${encodeURIComponent(id)}`;
 
   const res = await fetch(url, {
     next: { revalidate: 60 }
@@ -55,26 +58,37 @@ async function fetchArticle(slug: string): Promise<Article | null> {
 
   const data = (await res.json()) as Article | null;
 
-  if (!data || !data.slug) {
+  if (!data || !data.id) {
     return null;
   }
 
   return data;
 }
 
+function getIdFromSearchParams(
+  searchParams: PageProps["searchParams"]
+): string | null {
+  if (!searchParams) return null;
+  const raw = searchParams.id;
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw[0] ?? null;
+  return raw;
+}
+
 export async function generateMetadata(
-  { params }: PageProps
+  { params, searchParams }: PageProps
 ): Promise<Metadata> {
   const slug = params?.slug;
+  const id = getIdFromSearchParams(searchParams);
 
-  if (!slug) {
+  if (!slug || !id) {
     return {
       title: "Haber bulunamadı | SkyNews.Tr",
       description: "Aradığınız haber bulunamadı."
     };
   }
 
-  const article = await fetchArticle(slug);
+  const article = await fetchArticleById(id);
 
   if (!article) {
     return {
@@ -103,15 +117,19 @@ export async function generateMetadata(
   };
 }
 
-export default async function NewsArticlePage({ params }: PageProps) {
+export default async function NewsArticlePage({
+  params,
+  searchParams
+}: PageProps) {
   const slug = params?.slug;
+  const id = getIdFromSearchParams(searchParams);
 
-  if (!slug) {
-    console.error("Slug boş geldi");
+  if (!slug || !id) {
+    console.error("Slug veya ID eksik:", { slug, id });
     notFound();
   }
 
-  const article = await fetchArticle(slug);
+  const article = await fetchArticleById(id);
 
   if (!article) {
     notFound();
@@ -189,10 +207,13 @@ export default async function NewsArticlePage({ params }: PageProps) {
         {/* Debug */}
         <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-500">
           <p>
-            Debug — slug: <code>{slug}</code>
+            Debug — slug (URL&apos;den): <code>{slug}</code>
           </p>
           <p>
-            Debug — article.id: <code>{article.id}</code>
+            Debug — id (query param): <code>{id}</code>
+          </p>
+          <p>
+            Debug — article.id (API&apos;den): <code>{article.id}</code>
           </p>
         </div>
       </div>
