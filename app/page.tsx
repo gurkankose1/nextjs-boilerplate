@@ -37,12 +37,12 @@ type CategoryKey =
   | "accidents";
 
 const CATEGORY_FILTERS: { key: CategoryKey; label: string }[] = [
-  { key: "all", "label": "Tümü" },
-  { key: "airlines", "label": "Havayolları" },
-  { key: "airports", "label": "Havalimanları" },
-  { key: "ground-handling", "label": "Yer Hizmetleri" },
-  { key: "military-aviation", "label": "Askerî Havacılık" },
-  { key: "accidents", "label": "Kaza / Olay" },
+  { key: "all", label: "Tümü" },
+  { key: "airlines", label: "Havayolları" },
+  { key: "airports", label: "Havalimanları" },
+  { key: "ground-handling", label: "Yer Hizmetleri" },
+  { key: "military-aviation", label: "Askerî Havacılık" },
+  { key: "accidents", label: "Kaza / Olay" },
 ];
 
 const CATEGORY_LABEL_MAP: Record<string, string> = CATEGORY_FILTERS.reduce(
@@ -96,7 +96,6 @@ async function getArticlesAndGundemMessages() {
   const articles: ArticleCard[] = articlesSnap.docs.map((doc) => {
     const data = doc.data() || {};
 
-    // publishedAt alanını mümkün olduğunca doldur: publishedAt > published > createdAt
     const rawPublished =
       data.publishedAt ?? data.published ?? data.createdAt ?? null;
 
@@ -107,7 +106,6 @@ async function getArticlesAndGundemMessages() {
       } else if (rawPublished instanceof Date) {
         publishedAt = rawPublished.toISOString();
       } else if (typeof (rawPublished as any).toDate === "function") {
-        // Firestore Timestamp desteği
         publishedAt = (rawPublished as any).toDate().toISOString();
       } else {
         publishedAt = String(rawPublished);
@@ -118,7 +116,6 @@ async function getArticlesAndGundemMessages() {
       id: doc.id,
       title: data.title || data.seoTitle || "Başlıksız Haber",
       slug: data.slug || doc.id,
-      // summary alanını da fallback olarak kullan
       metaDesc: data.metaDesc ?? data.summary ?? null,
       category: normalizeCategory(data.category ?? null),
       publishedAt,
@@ -132,7 +129,7 @@ async function getArticlesAndGundemMessages() {
   const gundemSnap = await adminDb
     .collection("gundem_messages")
     .orderBy("createdAt", "desc")
-    .limit(10)
+    .limit(20)
     .get();
 
   const latestGundemMessages: GundemMessage[] = gundemSnap.docs.map((doc) => {
@@ -201,17 +198,95 @@ export default async function HomePage({
     ? new Date(heroArticle.publishedAt)
     : null;
 
+  const tickerArticles = articles.slice(0, 5);
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
+      {/* ÜST SABİT HEADER + NAV + KAYAN HABERLER */}
+      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+          <Link href="/" className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/10 ring-1 ring-sky-500/40">
+              <span className="text-xs font-bold text-sky-400">SKY</span>
+            </div>
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold text-slate-50">
+                {SITE_NAME}
+              </span>
+              <span className="text-[10px] uppercase tracking-[0.28em] text-slate-400">
+                Aviation News
+              </span>
+            </div>
+          </Link>
+          <nav className="hidden items-center gap-5 text-xs font-medium text-slate-300 sm:flex">
+            <Link href="/" className="hover:text-sky-300">
+              Haberler
+            </Link>
+            <Link href="/gundem" className="hover:text-sky-300">
+              Gündem Havacılık
+            </Link>
+            <Link href="/kategori/turkiye" className="hover:text-sky-300">
+              Türk Havacılığı
+            </Link>
+            <Link href="/admin" className="text-slate-500 hover:text-sky-300">
+              Admin Panel
+            </Link>
+          </nav>
+        </div>
+
+        {/* KAYAN HABER ŞERİDİ */}
+        {tickerArticles.length > 0 && (
+          <div className="border-t border-slate-800 bg-slate-900/90">
+            <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2 text-xs">
+              <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-50">
+                Son Haberler
+              </span>
+              <div className="relative flex-1 overflow-hidden">
+                <div className="marquee whitespace-nowrap">
+                  {tickerArticles.map((art, idx) => {
+                    const href = `/news/${encodeURIComponent(
+                      art.slug
+                    )}?id=${encodeURIComponent(art.id)}`;
+                    const dateText = art.publishedAt
+                      ? new Date(art.publishedAt).toLocaleDateString("tr-TR", {
+                          day: "2-digit",
+                          month: "short",
+                        })
+                      : "";
+                    return (
+                      <Link
+                        key={art.id}
+                        href={href}
+                        className="mr-8 inline-flex items-center gap-2 text-slate-200 hover:text-sky-300"
+                      >
+                        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">
+                          {idx + 1}
+                        </span>
+                        <span className="max-w-xs truncate">
+                          {art.title}
+                        </span>
+                        {dateText && (
+                          <span className="text-[10px] text-slate-400">
+                            {dateText}
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* ORTA BÖLÜM: HERO + LİSTE + SAĞDA EN ÇOK OKUNANLAR */}
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:py-10">
         {/* Sol taraf: Hero + filtre + liste */}
         <div className="flex-1 space-y-6">
           <header className="border-b border-slate-800 pb-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h1 className="text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">
-                  {SITE_NAME}
-                </h1>
                 <p className="text-xs text-slate-400 sm:text-sm">
                   Dünyanın dört bir yanından havacılık haberleri, Türk
                   havacılığına odaklı editör kadrosu ile.
@@ -377,10 +452,9 @@ export default async function HomePage({
           </section>
         </div>
 
-        {/* Sağ kolon: en çok okunanlar + gündem */}
+        {/* Sağ kolon: sadece En Çok Okunanlar */}
         {mostReadArticles.length > 0 && (
           <div className="w-full space-y-6 lg:w-72">
-            {/* En çok okunanlar */}
             <aside className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
               <h2 className="mb-3 text-sm font-semibold text-slate-100">
                 En Çok Okunanlar
@@ -412,72 +486,92 @@ export default async function HomePage({
                 })}
               </div>
             </aside>
-
-            {/* Gündem Havacılık */}
-            <aside className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-slate-100">
-                  Gündem Havacılık
-                </h2>
-                <Link
-                  href="/gundem"
-                  className="text-[11px] text-sky-400 hover:text-sky-300"
-                >
-                  Tümünü gör →
-                </Link>
-              </div>
-
-              {latestGundemMessages.length === 0 ? (
-                <p className="mt-3 text-xs text-slate-400">
-                  Henüz gündem mesajı yok. İlk sen yazmak ister misin?
-                </p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {latestGundemMessages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className="rounded-xl border border-slate-800 bg-slate-900/80 p-2.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] font-medium text-slate-100">
-                          {msg.displayName}
-                          {msg.company && (
-                            <span className="text-[10px] text-slate-400">
-                              {" "}
-                              • {msg.company}
-                            </span>
-                          )}
-                        </div>
-                        {msg.createdAt && (
-                          <div className="text-[10px] text-slate-500">
-                            {new Date(msg.createdAt).toLocaleDateString(
-                              "tr-TR",
-                              {
-                                day: "2-digit",
-                                month: "short",
-                              }
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <p className="mt-1 text-[11px] text-slate-200 line-clamp-2">
-                        {msg.message}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <button
-                type="button"
-                className="mt-3 w-full rounded-full border border-slate-700 bg-slate-900/60 px-3 py-2 text-center text-[13px] font-semibold text-sky-300 hover:bg-slate-800/80 transition"
-              >
-                Gündeme katılmak için /gundem sayfasına git
-              </button>
-            </aside>
           </div>
         )}
       </div>
+
+      {/* ALTTA YATAY GÜNDEM HAVACILIK ŞERİDİ */}
+      {latestGundemMessages.length > 0 && (
+        <section className="border-t border-slate-800 bg-slate-950/95">
+          <div className="mx-auto max-w-6xl px-4 py-6">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-100">
+                  Gündem Havacılık
+                </h2>
+                <p className="text-[11px] text-slate-400">
+                  Son kullanıcı yorumları ve sektör dedikoduları.
+                </p>
+              </div>
+              <Link
+                href="/gundem"
+                className="text-xs font-medium text-sky-400 hover:text-sky-300"
+              >
+                Tümünü gör →
+              </Link>
+            </div>
+
+            <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+              {latestGundemMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className="min-w-[260px] max-w-xs flex-1 rounded-2xl border border-slate-800 bg-slate-900/80 p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-medium text-slate-100">
+                      {msg.displayName}
+                      {msg.company && (
+                        <span className="text-[10px] text-slate-400">
+                          {" "}
+                          • {msg.company}
+                        </span>
+                      )}
+                    </div>
+                    {msg.createdAt && (
+                      <div className="text-[10px] text-slate-500">
+                        {new Date(msg.createdAt).toLocaleDateString("tr-TR", {
+                          day: "2-digit",
+                          month: "short",
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-200 line-clamp-3">
+                    {msg.message}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Kayan haberler için basit CSS animasyonu */}
+      <style jsx>{`
+        .marquee {
+          display: inline-block;
+          min-width: 100%;
+          animation: marquee 30s linear infinite;
+        }
+        .marquee:hover {
+          animation-play-state: paused;
+        }
+        @keyframes marquee {
+          0% {
+            transform: translateX(0%);
+          }
+          100% {
+            transform: translateX(-50%);
+          }
+        }
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
     </main>
   );
 }
