@@ -25,24 +25,27 @@ type PageProps = {
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "https://skynews-web.vercel.app";
 
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  "https://nextjs-boilerplate-sand-mu-98.vercel.app";
+
 /**
  * Belirli bir slug'a ait haberi API'den çeker.
- * Buradaki endpoint'i kendi backend'ine göre gerekirse uyarlarsın.
+ * Backend'ine göre endpoint'i uyarlayabilirsin.
  */
 async function fetchArticle(slug: string): Promise<Article | null> {
   if (!slug) return null;
 
-  // BASE sonundaki / işaretini temizliyoruz ki // oluşmasın
   const base = API_BASE.replace(/\/$/, "");
 
-  // 1) Eğer senin backend'in /articles/:slug şeklinde çalışıyorsa:
+  // Eğer backend'in /articles/:slug şeklinde çalışıyorsa:
   const url = `${base}/articles/${encodeURIComponent(slug)}`;
 
-  // Eğer backend'in ?slug query ile çalışıyorsa yukarıdakini şöyle değiştirebilirsin:
+  // Eğer backend /articles?slug=... ile çalışıyorsa üstteki satırı şu şekilde değiştir:
   // const url = `${base}/articles?slug=${encodeURIComponent(slug)}`;
 
   const res = await fetch(url, {
-    next: { revalidate: 60 } // 60 saniyede bir cache yenile
+    next: { revalidate: 60 }
   });
 
   if (!res.ok) {
@@ -58,9 +61,7 @@ async function fetchArticle(slug: string): Promise<Article | null> {
 
   return data;
 }
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ??
-  "https://nextjs-boilerplate-sand-mu-98.vercel.app";
+
 export async function generateMetadata(
   { params }: PageProps
 ): Promise<Metadata> {
@@ -88,19 +89,19 @@ export async function generateMetadata(
     `SkyNews.Tr – ${article.title} başlıklı havacılık haberi.`;
 
   return {
-  title,
-  description,
-  openGraph: {
     title,
     description,
-    type: "article",
-    url: `${SITE_URL}/news/${article.slug}`,
-    images: article.mainImageUrl
-      ? [{ url: article.mainImageUrl }]
-      : [{ url: "/og-default.jpg" }]
-  }
-};
-
+    openGraph: {
+      title,
+      description,
+      type: "article",
+      url: `${SITE_URL}/news/${article.slug}`,
+      images: article.mainImageUrl
+        ? [{ url: article.mainImageUrl }]
+        : [{ url: "/og-default.jpg" }]
+    }
+  };
+}
 
 export default async function NewsArticlePage({ params }: PageProps) {
   const slug = params?.slug;
@@ -127,7 +128,9 @@ export default async function NewsArticlePage({ params }: PageProps) {
             </span>
           )}
           {article.published && (
-            <span>{new Date(article.published).toLocaleString("tr-TR")}</span>
+            <span>
+              {new Date(article.published).toLocaleString("tr-TR")}
+            </span>
           )}
         </div>
 
@@ -158,7 +161,6 @@ export default async function NewsArticlePage({ params }: PageProps) {
         {/* Kapak görseli */}
         {article.mainImageUrl && (
           <div className="mb-6 overflow-hidden rounded-2xl border border-slate-800">
-            {/* Burada next/image yerine basit img kullanıyoruz ki ekstra import gerekmesin */}
             <img
               src={article.mainImageUrl}
               alt={article.title}
@@ -170,7 +172,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
         {/* Özet kutusu */}
         {article.summary && (
           <div className="mb-6 rounded-2xl border border-sky-500/30 bg-sky-500/5 p-4 text-sm text-slate-100">
-            <p className="font-semibold mb-1">Kısa Özet</p>
+            <p className="mb-1 font-semibold">Kısa Özet</p>
             <p>{article.summary}</p>
           </div>
         )}
@@ -178,15 +180,13 @@ export default async function NewsArticlePage({ params }: PageProps) {
         {/* İçerik */}
         <article className="prose prose-invert prose-sky max-w-none">
           {article.html ? (
-            <div
-              dangerouslySetInnerHTML={{ __html: article.html }}
-            />
+            <div dangerouslySetInnerHTML={{ __html: article.html }} />
           ) : (
             <p>Bu haberin ayrıntılı içeriği henüz hazırlanmadı.</p>
           )}
         </article>
 
-        {/* Debug satırı – bir süre tutabiliriz, sonra istersen kaldırırız */}
+        {/* Debug */}
         <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-500">
           <p>
             Debug — slug: <code>{slug}</code>
