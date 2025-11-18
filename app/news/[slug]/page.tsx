@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
 type Article = {
-  id: string;
+  id?: string;
+  docId?: string;
   title: string;
   seoTitle?: string;
   summary?: string;
-  slug: string;
+  slug?: string;
   html?: string;
   category?: string;
   source?: string;
@@ -24,6 +25,10 @@ type FetchState =
   | { status: "error"; error: string }
   | { status: "not-found" }
   | { status: "success"; article: Article };
+
+// Anasayfadakiyle aynı mantıkta API:
+const API =
+  process.env.NEXT_PUBLIC_API_URL ?? "https://skynews-web.vercel.app/";
 
 export default function NewsArticlePageClient() {
   const params = useParams();
@@ -53,9 +58,10 @@ export default function NewsArticlePageClient() {
       setState({ status: "loading" });
 
       try {
-        // Artık kendi API route'umuza istek atıyoruz:
-        // /api/articles?turkey_first=true  -> JSON Article[]
-        const url = "/api/articles?turkey_first=true";
+        const base = API.replace(/\/$/, "");
+        // Anasayfadakiyle aynı endpoint:
+        // GET {API}/articles?turkey_first=true -> Article[]
+        const url = `${base}/articles?turkey_first=true`;
 
         const res = await fetch(url);
         if (!res.ok) {
@@ -81,14 +87,30 @@ export default function NewsArticlePageClient() {
           return;
         }
 
-        // Önce id ile ara, yoksa slug ile
-        const foundById = id ? data.find((a) => a.id === id) : undefined;
+        // Önce id ile ara (id veya docId)
+        const foundById =
+          id &&
+          data.find((a) => a.id === id || a.docId === id);
+
+        // Sonra birebir slug ile ara
         const foundBySlug =
           !foundById && slug
             ? data.find((a) => a.slug === slug)
             : undefined;
 
-        const article = foundById ?? foundBySlug;
+        // Son olarak kısmi slug eşleşmesi (emniyet supabı)
+        const foundByPartialSlug =
+          !foundById && !foundBySlug && slug
+            ? data.find(
+                (a) =>
+                  a.slug &&
+                  (a.slug === slug ||
+                    a.slug.endsWith(slug) ||
+                    slug.endsWith(a.slug))
+              )
+            : undefined;
+
+        const article = foundById ?? foundBySlug ?? foundByPartialSlug;
 
         if (!article) {
           if (!cancelled) {
@@ -255,7 +277,12 @@ export default function NewsArticlePageClient() {
             Debug — id (query param): <code>{id}</code>
           </p>
           <p>
-            Debug — article.id (API&apos;den): <code>{article.id}</code>
+            Debug — article.id (API&apos;den):{" "}
+            <code>{article.id ?? article.docId ?? "(yok)"}</code>
+          </p>
+          <p>
+            Debug — article.slug (API&apos;den):{" "}
+            <code>{article.slug ?? "(yok)"}</code>
           </p>
         </div>
       </div>
