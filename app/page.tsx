@@ -511,7 +511,7 @@ export default async function HomePage({
               </Link>
             </div>
 
-            <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+            <div className="gundem-scroll flex gap-3 overflow-x-auto pb-1">
               {latestGundemMessages.map((msg) => (
                 <div
                   key={msg.id}
