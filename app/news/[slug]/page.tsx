@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 type PageProps = {
   params: {
     slug: string;
@@ -55,7 +57,13 @@ export default function NewsArticleDebugPage({
         >
           News Debug Sayfası
         </h1>
-        <p style={{ fontSize: "14px", color: "#9ca3af", marginBottom: "16px" }}>
+        <p
+          style={{
+            fontSize: "14px",
+            color: "#9ca3af",
+            marginBottom: "16px"
+          }}
+        >
           Bu sayfa sadece rotanın çalışıp çalışmadığını test etmek için
           gösteriliyor.
         </p>
@@ -72,11 +80,11 @@ export default function NewsArticleDebugPage({
         >
           <p>
             <strong>URL slug:</strong>{" "}
-            <code style={{ color: "#38bdf8" }}>{slug}</code>
+            <code style={{ color: "#38bdf8" }}>{slug ?? "(null)"}</code>
           </p>
           <p>
             <strong>Query id:</strong>{" "}
-            <code style={{ color: "#38bdf8" }}>{id}</code>
+            <code style={{ color: "#38bdf8" }}>{id ?? "(null)"}</code>
           </p>
         </div>
 
@@ -87,8 +95,18 @@ export default function NewsArticleDebugPage({
             color: "#6b7280"
           }}
         >
-          Eğer bu kutuyu görebiliyorsan, <code>/app/news/[slug]/page.tsx</code>{" "}
-          rotası çalışıyor demektir.
+          Eğer bu kutuyu görebiliyorsan,{" "}
+          <code>/app/news/[slug]/page.tsx</code> rotası çalışıyor demektir.
+        </p>
+        <p
+          style={{
+            marginTop: "4px",
+            fontSize: "12px",
+            color: "#6b7280"
+          }}
+        >
+          Eğer slug ve id dolu görünüyorsa, params ve query parametreleri artık
+          doğru geliyor demektir.
         </p>
       </div>
     </main>
