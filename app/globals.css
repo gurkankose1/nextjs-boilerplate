@@ -75,7 +75,10 @@ body {
     rgba(59, 130, 246, 0.95)
   );
 }
-
+/* SkyNews: özel uçak imleç */
+.skynews-cursor {
+  cursor: url("/plane-cursor.svg") 4 4, auto;
+}
 /* Firefox için */
 .gundem-scroll {
   scrollbar-width: thin;
