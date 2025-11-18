@@ -545,33 +545,6 @@ export default async function HomePage({
           </div>
         </section>
       )}
-
-      {/* Kayan haberler için basit CSS animasyonu */}
-      <style jsx>{`
-        .marquee {
-          display: inline-block;
-          min-width: 100%;
-          animation: marquee 30s linear infinite;
-        }
-        .marquee:hover {
-          animation-play-state: paused;
-        }
-        @keyframes marquee {
-          0% {
-            transform: translateX(0%);
-          }
-          100% {
-            transform: translateX(-50%);
-          }
-        }
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-      `}</style>
     </main>
   );
 }
