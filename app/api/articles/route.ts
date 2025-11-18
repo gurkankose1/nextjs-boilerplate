@@ -1,21 +1,24 @@
 import { NextResponse } from "next/server";
-import admin from "firebase-admin";
+import admin, { ServiceAccount } from "firebase-admin";
 
 const projectId = process.env.FIREBASE_PROJECT_ID;
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-// Firebase Admin'i tek seferlik initialize et
+// Vercel'de private key genelde \n diye gelir, gerçek satır başına çeviriyoruz
+const privateKey = rawPrivateKey ? rawPrivateKey.replace(/\\n/g, "\n") : undefined;
+
+// Firebase Admin'i tek sefer initialize et
 if (!admin.apps.length) {
   if (!projectId || !clientEmail || !privateKey) {
-    console.error("Firebase env değişkenleri eksik!");
+    console.error("Firebase env değişkenleri eksik! FIREBASE_* değerlerini kontrol edin.");
   } else {
     admin.initializeApp({
       credential: admin.credential.cert({
         projectId,
         clientEmail,
-        privateKey
-      })
+        privateKey,
+      } as ServiceAccount),
     });
   }
 }
@@ -24,38 +27,23 @@ const db = admin.apps.length ? admin.firestore() : null;
 
 /**
  * GET /api/articles
- *
- * Firestore'daki "articles" koleksiyonundan verileri çeker.
- * Her doküman:
- *   - doc.id  -> id
- *   - data().slug, title, summary, html, vs.
+ * Firestore'daki "articles" koleksiyonundan tüm haberleri çeker.
  */
-export async function GET(request: Request) {
+export async function GET(_request: Request) {
   try {
     if (!db) {
       return NextResponse.json(
-        {
-          error:
-            "Firebase Admin başlatılamadı. Env değişkenlerini kontrol edin."
-        },
+        { error: "Firebase Admin başlatılamadı. Env değişkenlerini kontrol edin." },
         { status: 500 }
       );
     }
 
-    const url = new URL(request.url);
-    const turkeyFirst = url.searchParams.get("turkey_first");
-
-    let query: FirebaseFirestore.Query = db
-      .collection("articles")
-      .orderBy("createdAt", "desc");
-
-    // İstersen turkey_first gibi filter'ları ileride burada kullanabiliriz
-    // if (turkeyFirst === "true") { ... }
-
-    const snap = await query.limit(200).get();
+    // Şimdilik orderBy kullanmıyoruz ki createdAt zorunlu olmasın
+    const snap = await db.collection("articles").get();
 
     const items = snap.docs.map((doc) => {
       const data = doc.data() as any;
+
       return {
         id: doc.id,
         title: data.title ?? "",
@@ -65,10 +53,11 @@ export async function GET(request: Request) {
         html: data.html ?? "",
         category: data.category ?? "",
         source: data.source ?? "",
-        sourceUrl: data.sourceUrl ?? "",
-        published: data.published ?? data.createdAt ?? null,
+        // Hem "sourceUrl" hem "sourceurl" field'ını destekle
+        sourceUrl: data.sourceUrl ?? data.sourceurl ?? "",
+        published: data.published ?? null,
         createdAt: data.createdAt ?? null,
-        mainImageUrl: data.mainImageUrl ?? ""
+        mainImageUrl: data.mainImageUrl ?? "",
       };
     });
 
@@ -76,9 +65,7 @@ export async function GET(request: Request) {
   } catch (err: any) {
     console.error("GET /api/articles hata:", err);
     return NextResponse.json(
-      {
-        error: err?.message ?? "Bilinmeyen hata"
-      },
+      { error: err?.message ?? "Bilinmeyen hata" },
       { status: 500 }
     );
   }
