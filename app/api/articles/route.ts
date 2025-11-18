@@ -1,91 +1,59 @@
 import { NextResponse } from "next/server";
 
-const REMOTE_API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "https://skynews-web.vercel.app";
+type Article = {
+  id: string;
+  title: string;
+  summary?: string;
+  slug: string;
+  html?: string;
+  category?: string;
+  source?: string;
+  sourceUrl?: string;
+  published?: string;
+  createdAt?: string;
+  mainImageUrl?: string;
+};
 
-/**
- * /api/articles
- *
- * Frontend'den gelen istekleri uzaktaki gerçek API'ye proxy'ler.
- * Hem /articles hem de /api/articles path'lerini dener.
- */
-export async function GET(request: Request) {
-  try {
-    const incomingUrl = new URL(request.url);
-    const search = incomingUrl.search; // ?turkey_first=true vs.
-
-    const remoteBase = REMOTE_API_BASE.replace(/\/$/, "");
-
-    const candidateUrls = [
-      `${remoteBase}/articles${search}`,
-      `${remoteBase}/api/articles${search}`
-    ];
-
-    let lastStatus = 0;
-    let lastBody = "";
-
-    for (const remoteUrl of candidateUrls) {
-      try {
-        const res = await fetch(remoteUrl, {
-          // İstersen burayı cache'li yapabilirsin
-          cache: "no-store"
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          return NextResponse.json(data);
-        }
-
-        lastStatus = res.status;
-        lastBody = await res.text();
-
-        // Sadece 404 ise bir sonrakini dene, diğer durumlarda direkt hata dön
-        if (res.status !== 404) {
-          console.error(
-            "Remote articles error (non-404):",
-            res.status,
-            lastBody
-          );
-          return NextResponse.json(
-            {
-              error: "Remote articles endpoint failed",
-              status: res.status,
-              body: lastBody,
-              tried: [remoteUrl]
-            },
-            { status: res.status }
-          );
-        }
-      } catch (err: any) {
-        console.error("Fetch error for", remoteUrl, err);
-        lastStatus = 500;
-        lastBody = err?.message ?? "Unknown fetch error";
-      }
-    }
-
-    // Buraya geldiysek her iki URL de 404 (veya hiçbiri başarılı değil)
-    console.error("All remote article URLs failed", {
-      tried: candidateUrls,
-      lastStatus,
-      lastBody
-    });
-
-    return NextResponse.json(
-      {
-        error: "Remote articles endpoint not found on any candidate URL",
-        status: lastStatus || 404,
-        body: lastBody,
-        tried: candidateUrls
-      },
-      { status: lastStatus || 404 }
-    );
-  } catch (err: any) {
-    console.error("Proxy /api/articles error:", err);
-    return NextResponse.json(
-      {
-        error: err?.message ?? "Unknown error while proxying /api/articles"
-      },
-      { status: 500 }
-    );
+// Şimdilik DEMO veri. İki haber ekliyorum.
+// 1) Eurofighter haberi (slug ve id aynen senin linkindeki gibi)
+// 2) Pegasus haberi (daha önce yazdığın slug + id)
+const DEMO_ARTICLES: Article[] = [
+  {
+    id: "WPsT1eXFf0YPlfQxfyL7",
+    slug: "turkiyenin-20-adet-eurofighter-typhoon-savas-ucag-satn-almndan-ra",
+    title:
+      "Türkiye’nin 20 adet Eurofighter Typhoon savaş uçağı alımı gündemde",
+    summary:
+      "Türkiye’nin 20 adet Eurofighter Typhoon savaş uçağı alımı için yürüttüğü süreçte son durum ve olası senaryolar.",
+    html: `<p>Bu sayfa şu anda <strong>demo</strong> veri ile çalışıyor.</p>
+<p>Gerçek projede bu içerik Firestore veya başka bir backend'den gelecektir.</p>
+<p>Şimdilik amaç, <code>/news/[slug]?id=...</code> yapısının sorunsuz çalıştığını kanıtlamak.</p>`,
+    category: "Savunma & Askerî Havacılık",
+    source: "Demo Kaynak",
+    sourceUrl: "https://example.com/eurofighter-demo",
+    published: new Date().toISOString(),
+    mainImageUrl:
+      "https://images.pexels.com/photos/46148/aircraft-jet-landing-cloud-46148.jpeg"
+  },
+  {
+    id: "iipfSbHhnTpqZnCI1l3t",
+    slug: "pegasus-hava-tasimaciligi-as-2025-yilinin-ilk-dokuz-ayina-iliskin-finansal-sonuclarini-acikladi-sirk",
+    title:
+      "Pegasus Hava Taşımacılığı A.Ş. 2025 yılının ilk dokuz ayına ilişkin finansal sonuçlarını açıkladı",
+    summary:
+      "Pegasus’un 2025 yılının ilk dokuz ayındaki yolcu sayısı, gelirleri ve operasyonel performansı hakkında demo içerik.",
+    html: `<p>Bu da Pegasus için eklenmiş <strong>demo</strong> bir haberdir.</p>
+<p>Gerçek veriler bağlandığında bu alan otomatik olarak gerçek HTML ile dolacak.</p>`,
+    category: "Havayolları",
+    source: "Demo Kaynak",
+    sourceUrl: "https://example.com/pegasus-demo",
+    published: new Date().toISOString(),
+    mainImageUrl:
+      "https://images.pexels.com/photos/358220/pexels-photo-358220.jpeg"
   }
+];
+
+// GET /api/articles  ->  DEMO_ARTICLES dizisini döner
+export async function GET(_request: Request) {
+  return NextResponse.json(DEMO_ARTICLES);
 }
