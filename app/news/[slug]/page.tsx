@@ -26,15 +26,24 @@ type FetchState =
   | { status: "not-found" }
   | { status: "success"; article: Article };
 
-// Anasayfadakiyle aynı mantıkta API:
-const API =
-  process.env.NEXT_PUBLIC_API_URL ?? "https://skynews-web.vercel.app/";
+/**
+ * ⛔️ ŞU AN BURASI BOŞ.
+ *
+ * Buraya gerçekten JSON dönen bir endpoint yazman gerekiyor.
+ * Örnek JSON (dizi):
+ * [
+ *   { "id": "WPsT1eXFf0YPlfQxfyL7", "slug": "turkiyenin-...", "title": "...", ... },
+ *   ...
+ * ]
+ *
+ * Örn: "https://senin-backendin.vercel.app/api/articles?turkey_first=true"
+ */
+const ARTICLES_LIST_URL = process.env.NEXT_PUBLIC_ARTICLES_URL ?? "";
 
 export default function NewsArticlePageClient() {
   const params = useParams();
   const searchParams = useSearchParams();
 
-  // slug ve id'yi client tarafında alıyoruz
   const slug = useMemo(() => {
     const value = params?.["slug"];
     if (Array.isArray(value)) return value[0];
@@ -51,6 +60,14 @@ export default function NewsArticlePageClient() {
 
   useEffect(() => {
     if (!slug && !id) return;
+    if (!ARTICLES_LIST_URL) {
+      setState({
+        status: "error",
+        error:
+          "ARTICLES_LIST_URL tanımlı değil. Lütfen gerçek JSON endpoint adresini NEXT_PUBLIC_ARTICLES_URL ortam değişkenine yaz."
+      });
+      return;
+    }
 
     let cancelled = false;
 
@@ -58,10 +75,7 @@ export default function NewsArticlePageClient() {
       setState({ status: "loading" });
 
       try {
-        const base = API.replace(/\/$/, "");
-        // Anasayfadakiyle aynı endpoint:
-        // GET {API}/articles?turkey_first=true -> Article[]
-        const url = `${base}/articles?turkey_first=true`;
+        const url = ARTICLES_LIST_URL;
 
         const res = await fetch(url);
         if (!res.ok) {
@@ -87,18 +101,15 @@ export default function NewsArticlePageClient() {
           return;
         }
 
-        // Önce id ile ara (id veya docId)
         const foundById =
           id &&
           data.find((a) => a.id === id || a.docId === id);
 
-        // Sonra birebir slug ile ara
         const foundBySlug =
           !foundById && slug
             ? data.find((a) => a.slug === slug)
             : undefined;
 
-        // Son olarak kısmi slug eşleşmesi (emniyet supabı)
         const foundByPartialSlug =
           !foundById && !foundBySlug && slug
             ? data.find(
@@ -133,13 +144,12 @@ export default function NewsArticlePageClient() {
     };
 
     fetchArticle();
-
     return () => {
       cancelled = true;
     };
   }, [slug, id]);
 
-  // Durumlara göre render
+  // Durumlar
 
   if (!slug && !id) {
     return (
@@ -275,14 +285,6 @@ export default function NewsArticlePageClient() {
           </p>
           <p>
             Debug — id (query param): <code>{id}</code>
-          </p>
-          <p>
-            Debug — article.id (API&apos;den):{" "}
-            <code>{article.id ?? article.docId ?? "(yok)"}</code>
-          </p>
-          <p>
-            Debug — article.slug (API&apos;den):{" "}
-            <code>{article.slug ?? "(yok)"}</code>
           </p>
         </div>
       </div>
