@@ -147,16 +147,23 @@ async function getArticlesAndGundemMessages() {
 
   const latestGundemMessages: GundemMessage[] = gundemSnap.docs.map((doc) => {
     const data = doc.data() || {};
+    const createdAt =
+      typeof data.createdAt === "string"
+        ? data.createdAt
+        : typeof (data.createdAt as any)?.toDate === "function"
+        ? (data.createdAt as any).toDate().toISOString()
+        : null;
+
     return {
       id: doc.id,
       displayName: data.displayName || "Anonim",
       company: data.company || null,
       message: data.message || "",
-      createdAt: data.createdAt || null,
+      createdAt,
     };
   });
 
-  // Aktif anketi çek (polls koleksiyonu varsayımı)
+  // Aktif anketi çek (polls koleksiyonu)
   let activePoll: Poll | null = null;
 
   try {
@@ -192,8 +199,7 @@ async function getArticlesAndGundemMessages() {
         totalVotes,
       };
     }
-  } catch (_e) {
-    // polls koleksiyonu yoksa / index yoksa sessizce yoksay
+  } catch {
     activePoll = null;
   }
 
@@ -212,14 +218,14 @@ export default async function HomePage({
       ? searchParams.category
       : undefined;
 
+  const { articles, latestGundemMessages, activePoll } =
+    await getArticlesAndGundemMessages();
+
   const activeCategory: CategoryKey = (CATEGORY_FILTERS.some(
     (c) => c.key === categoryParam
   )
     ? categoryParam
     : "all") as CategoryKey;
-
-  const { articles, latestGundemMessages, activePoll } =
-    await getArticlesAndGundemMessages();
 
   const now = Date.now();
   const recentCutoff = now - 24 * 60 * 60 * 1000;
@@ -335,7 +341,7 @@ export default async function HomePage({
         )}
       </header>
 
-      {/* ORTA BÖLÜM: HERO + LİSTE + SAĞDA EN ÇOK OKUNANLAR + ANKET */}
+      {/* ORTA BÖLÜM: HERO + LİSTE + SAĞDA EN ÇOK OKUNANLAR / ANKET */}
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:py-10">
         {/* Sol taraf: Hero + filtre + liste */}
         <div className="flex-1 space-y-6">
@@ -507,7 +513,7 @@ export default async function HomePage({
           </section>
         </div>
 
-                {/* Sağ kolon: En Çok Okunanlar + Haftanın Anketi */}
+        {/* Sağ kolon: En Çok Okunanlar + Haftanın Anketi */}
         {(mostReadArticles.length > 0 || activePoll) && (
           <div className="w-full space-y-6 lg:w-72">
             {/* En Çok Okunanlar */}
@@ -532,12 +538,11 @@ export default async function HomePage({
                           <p className="line-clamp-2 group-hover:text-sky-100">
                             {art.title}
                           </p>
-                          {typeof art.views === "number" &&
-                            art.views > 0 && (
-                              <p className="text-[10px] text-slate-500">
-                                {art.views} okunma
-                              </p>
-                            )}
+                          {typeof art.views === "number" && art.views > 0 && (
+                            <p className="text-[10px] text-slate-500">
+                              {art.views} okunma
+                            </p>
+                          )}
                         </div>
                       </Link>
                     );
@@ -566,9 +571,7 @@ export default async function HomePage({
                     return (
                       <div key={opt.id} className="space-y-1 text-xs">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-slate-200">
-                            {opt.text}
-                          </span>
+                          <span className="text-slate-200">{opt.text}</span>
                           <span className="text-slate-400">
                             {opt.votes} oy • {ratio}%
                           </span>
@@ -584,13 +587,14 @@ export default async function HomePage({
                   })}
                 </div>
                 <p className="mt-3 text-[10px] text-slate-500">
-                  Toplam {activePoll.totalVotes} oy • Anket sonuçları
-                  haftalık olarak Gemini ile yorumlanacak.
+                  Toplam {activePoll.totalVotes} oy • Anket sonuçları haftalık
+                  olarak Gemini ile yorumlanacak.
                 </p>
               </aside>
             )}
           </div>
         )}
+      </div>
 
       {/* ALTTA YATAY GÜNDEM HAVACILIK ŞERİDİ */}
       {latestGundemMessages.length > 0 && (
