@@ -507,41 +507,44 @@ export default async function HomePage({
           </section>
         </div>
 
-        {/* Sağ kolon: En Çok Okunanlar + Haftanın Anketi */}
-        {mostReadArticles.length > 0 && (
+                {/* Sağ kolon: En Çok Okunanlar + Haftanın Anketi */}
+        {(mostReadArticles.length > 0 || activePoll) && (
           <div className="w-full space-y-6 lg:w-72">
             {/* En Çok Okunanlar */}
-            <aside className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-              <h2 className="mb-3 text-sm font-semibold text-slate-100">
-                En Çok Okunanlar
-              </h2>
-              <div className="space-y-2">
-                {mostReadArticles.map((art) => {
-                  const href = `/news/${encodeURIComponent(
-                    art.slug
-                  )}?id=${encodeURIComponent(art.id)}`;
-                  return (
-                    <Link
-                      key={art.id}
-                      href={href}
-                      className="group flex gap-2 rounded-xl border border-transparent px-2 py-1.5 text-xs text-slate-300 transition hover:border-sky-500/60 hover:bg-slate-900"
-                    >
-                      <div className="mt-1 h-1.5 w-1.5 rounded-full bg-sky-400" />
-                      <div className="flex-1">
-                        <p className="line-clamp-2 group-hover:text-sky-100">
-                          {art.title}
-                        </p>
-                        {typeof art.views === "number" && art.views > 0 && (
-                          <p className="text-[10px] text-slate-500">
-                            {art.views} okunma
+            {mostReadArticles.length > 0 && (
+              <aside className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+                <h2 className="mb-3 text-sm font-semibold text-slate-100">
+                  En Çok Okunanlar
+                </h2>
+                <div className="space-y-2">
+                  {mostReadArticles.map((art) => {
+                    const href = `/news/${encodeURIComponent(
+                      art.slug
+                    )}?id=${encodeURIComponent(art.id)}`;
+                    return (
+                      <Link
+                        key={art.id}
+                        href={href}
+                        className="group flex gap-2 rounded-xl border border-transparent px-2 py-1.5 text-xs text-slate-300 transition hover:border-sky-500/60 hover:bg-slate-900"
+                      >
+                        <div className="mt-1 h-1.5 w-1.5 rounded-full bg-sky-400" />
+                        <div className="flex-1">
+                          <p className="line-clamp-2 group-hover:text-sky-100">
+                            {art.title}
                           </p>
-                        )}
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </aside>
+                          {typeof art.views === "number" &&
+                            art.views > 0 && (
+                              <p className="text-[10px] text-slate-500">
+                                {art.views} okunma
+                              </p>
+                            )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </aside>
+            )}
 
             {/* Haftanın Anketi (aktif anket varsa) */}
             {activePoll && (
@@ -588,7 +591,6 @@ export default async function HomePage({
             )}
           </div>
         )}
-      </div>
 
       {/* ALTTA YATAY GÜNDEM HAVACILIK ŞERİDİ */}
       {latestGundemMessages.length > 0 && (
