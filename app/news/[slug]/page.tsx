@@ -26,16 +26,28 @@ type FetchState =
   | { status: "not-found" }
   | { status: "success"; article: Article };
 
+// Slug'ları karşılaştırmadan önce normalize edelim
+function normalizeSlug(value?: string | null): string {
+  if (!value) return "";
+  return value.toString().trim().toLowerCase().replace(/\/+$/, "");
+}
+
 export default function NewsArticlePageClient() {
   const params = useParams();
   const searchParams = useSearchParams();
 
-  // URL'den slug
-  const slug = useMemo(() => {
+  // URL'den gelen orijinal slug (debug için)
+  const rawSlug = useMemo(() => {
     const value = params?.["slug"];
-    if (Array.isArray(value)) return value[0];
+    if (Array.isArray(value)) return value[0] ?? "";
     return (value as string) ?? "";
   }, [params]);
+
+  // Normalleştirilmiş slug (karşılaştırma için)
+  const normalizedSlug = useMemo(
+    () => normalizeSlug(rawSlug),
+    [rawSlug]
+  );
 
   // Query'den id
   const id = useMemo(() => {
@@ -47,7 +59,7 @@ export default function NewsArticlePageClient() {
   const [state, setState] = useState<FetchState>({ status: "idle" });
 
   useEffect(() => {
-    if (!slug && !id) return;
+    if (!normalizedSlug && !id) return;
 
     let cancelled = false;
 
@@ -83,27 +95,33 @@ export default function NewsArticlePageClient() {
           return;
         }
 
-        // Önce id ile ara (id veya docId)
+        // ---- MAÇ LOGİĞİ ----
+
+        // 1) Önce id ile ara (id veya docId)
         const foundById =
           id &&
           data.find((a) => a.id === id || a.docId === id);
 
-        // Sonra birebir slug ile ara
+        // 2) Sonra normalize slug ile birebir eşleşme
         const foundBySlug =
-          !foundById && slug
-            ? data.find((a) => a.slug === slug)
-            : undefined;
-
-        // Son olarak kısmi slug eşleşmesi (emniyet supabı)
-        const foundByPartialSlug =
-          !foundById && !foundBySlug && slug
+          !foundById && normalizedSlug
             ? data.find(
                 (a) =>
-                  a.slug &&
-                  (a.slug === slug ||
-                    a.slug.endsWith(slug) ||
-                    slug.endsWith(a.slug))
+                  normalizeSlug(a.slug) === normalizedSlug
               )
+            : undefined;
+
+        // 3) Son olarak kısmi slug eşleştirmesi
+        const foundByPartialSlug =
+          !foundById && !foundBySlug && normalizedSlug
+            ? data.find((a) => {
+                const artSlug = normalizeSlug(a.slug);
+                return (
+                  artSlug === normalizedSlug ||
+                  artSlug.endsWith(normalizedSlug) ||
+                  normalizedSlug.endsWith(artSlug)
+                );
+              })
             : undefined;
 
         const article = foundById ?? foundBySlug ?? foundByPartialSlug;
@@ -133,19 +151,19 @@ export default function NewsArticlePageClient() {
     return () => {
       cancelled = true;
     };
-  }, [slug, id]);
+  }, [normalizedSlug, id]);
 
   // Durumlara göre ekrana bastığımız kısımlar
 
-  if (!slug && !id) {
+  if (!normalizedSlug && !id) {
     return (
       <MainWrapper>
         <CenteredBox title="Geçersiz adres">
           <p className="text-sm text-slate-400">
-            Bu haber sayfasını açmak için geçerli bir slug veya id parametresi
-            gereklidir.
+            Bu haber sayfasını açmak için geçerli bir slug veya id
+            parametresi gereklidir.
           </p>
-          <DebugBox slug={slug} id={id} />
+          <DebugBox rawSlug={rawSlug} normalizedSlug={normalizedSlug} id={id} />
         </CenteredBox>
       </MainWrapper>
     );
@@ -158,7 +176,7 @@ export default function NewsArticlePageClient() {
           <p className="text-sm text-slate-400">
             Haber içeriği yükleniyor, lütfen bekleyin.
           </p>
-          <DebugBox slug={slug} id={id} />
+          <DebugBox rawSlug={rawSlug} normalizedSlug={normalizedSlug} id={id} />
         </CenteredBox>
       </MainWrapper>
     );
@@ -174,7 +192,7 @@ export default function NewsArticlePageClient() {
           <p className="text-xs text-slate-400 whitespace-pre-wrap">
             {state.error}
           </p>
-          <DebugBox slug={slug} id={id} />
+          <DebugBox rawSlug={rawSlug} normalizedSlug={normalizedSlug} id={id} />
         </CenteredBox>
       </MainWrapper>
     );
@@ -187,7 +205,7 @@ export default function NewsArticlePageClient() {
           <p className="text-sm text-slate-400">
             Bu slug/id ile eşleşen bir haber bulunamadı.
           </p>
-          <DebugBox slug={slug} id={id} />
+          <DebugBox rawSlug={rawSlug} normalizedSlug={normalizedSlug} id={id} />
         </CenteredBox>
       </MainWrapper>
     );
@@ -267,10 +285,13 @@ export default function NewsArticlePageClient() {
         {/* Debug */}
         <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-500">
           <p>
-            Debug — slug (URL&apos;den): <code>{slug}</code>
+            Debug — raw slug (URL&apos;den): <code>{rawSlug}</code>
           </p>
           <p>
-            Debug — id (query param): <code>{id}</code>
+            Debug — normalized slug: <code>{normalizedSlug}</code>
+          </p>
+          <p>
+            Debug — id (query param): <code>{id || "(boş)"}</code>
           </p>
         </div>
       </div>
@@ -303,14 +324,28 @@ function CenteredBox({
   );
 }
 
-function DebugBox({ slug, id }: { slug: string; id: string }) {
+function DebugBox({
+  rawSlug,
+  normalizedSlug,
+  id
+}: {
+  rawSlug: string;
+  normalizedSlug: string;
+  id: string;
+}) {
   return (
     <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-xs text-slate-400">
       <p>
-        <strong>URL slug:</strong> <code>{slug || "(boş)"}</code>
+        <strong>URL raw slug:</strong>{" "}
+        <code>{rawSlug || "(boş)"}</code>
       </p>
       <p>
-        <strong>Query id:</strong> <code>{id || "(boş)"}</code>
+        <strong>Normalized slug:</strong>{" "}
+        <code>{normalizedSlug || "(boş)"}</code>
+      </p>
+      <p>
+        <strong>Query id:</strong>{" "}
+        <code>{id || "(boş)"}</code>
       </p>
     </div>
   );
