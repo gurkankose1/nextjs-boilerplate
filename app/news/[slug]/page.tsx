@@ -1,114 +1,50 @@
-export const dynamic = "force-dynamic";
+"use client";
 
-type PageProps = {
-  params: {
-    slug: string;
-  };
-  searchParams?: {
-    [key: string]: string | string[] | undefined;
-  };
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+
+type Article = {
+  id: string;
+  title: string;
+  seoTitle?: string;
+  summary?: string;
+  slug: string;
+  html?: string;
+  category?: string;
+  source?: string;
+  sourceUrl?: string;
+  published?: string;
+  createdAt?: string;
+  mainImageUrl?: string;
 };
 
-function getIdFromSearchParams(
-  searchParams: PageProps["searchParams"]
-): string | null {
-  if (!searchParams) return null;
-  const raw = searchParams.id;
-  if (!raw) return null;
-  if (Array.isArray(raw)) return raw[0] ?? null;
-  return raw;
-}
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? "https://skynews-web.vercel.app/";
 
-export default function NewsArticleDebugPage({
-  params,
-  searchParams
-}: PageProps) {
-  const slug = params?.slug ?? null;
-  const id = getIdFromSearchParams(searchParams);
+type FetchState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; error: string }
+  | { status: "not-found" }
+  | { status: "success"; article: Article };
 
-  return (
-    <main
-      style={{
-        minHeight: "100vh",
-        backgroundColor: "#020617",
-        color: "#e5e7eb",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "640px",
-          width: "100%",
-          padding: "24px",
-          borderRadius: "16px",
-          border: "1px solid #1f2937",
-          backgroundColor: "#020617"
-        }}
-      >
-        <h1
-          style={{
-            fontSize: "24px",
-            fontWeight: 600,
-            marginBottom: "12px"
-          }}
-        >
-          News Debug Sayfası
-        </h1>
-        <p
-          style={{
-            fontSize: "14px",
-            color: "#9ca3af",
-            marginBottom: "16px"
-          }}
-        >
-          Bu sayfa sadece rotanın çalışıp çalışmadığını test etmek için
-          gösteriliyor.
-        </p>
+export default function NewsArticlePageClient() {
+  const params = useParams();
+  const searchParams = useSearchParams();
 
-        <div
-          style={{
-            fontSize: "13px",
-            backgroundColor: "#020617",
-            borderRadius: "12px",
-            border: "1px solid #374151",
-            padding: "12px",
-            lineHeight: 1.6
-          }}
-        >
-          <p>
-            <strong>URL slug:</strong>{" "}
-            <code style={{ color: "#38bdf8" }}>{slug ?? "(null)"}</code>
-          </p>
-          <p>
-            <strong>Query id:</strong>{" "}
-            <code style={{ color: "#38bdf8" }}>{id ?? "(null)"}</code>
-          </p>
-        </div>
+  // slug ve id'yi client tarafında alıyoruz
+  const slug = useMemo(() => {
+    const value = params?.["slug"];
+    if (Array.isArray(value)) return value[0];
+    return (value as string) ?? "";
+  }, [params]);
 
-        <p
-          style={{
-            marginTop: "16px",
-            fontSize: "12px",
-            color: "#6b7280"
-          }}
-        >
-          Eğer bu kutuyu görebiliyorsan,{" "}
-          <code>/app/news/[slug]/page.tsx</code> rotası çalışıyor demektir.
-        </p>
-        <p
-          style={{
-            marginTop: "4px",
-            fontSize: "12px",
-            color: "#6b7280"
-          }}
-        >
-          Eğer slug ve id dolu görünüyorsa, params ve query parametreleri artık
-          doğru geliyor demektir.
-        </p>
-      </div>
-    </main>
-  );
-}
+  const id = useMemo(() => {
+    if (!searchParams) return "";
+    const value = searchParams.get("id");
+    return value ?? "";
+  }, [searchParams]);
+
+  const [state, setState] = useState<FetchState>({ status: "idle" });
+
+  useEffect((
