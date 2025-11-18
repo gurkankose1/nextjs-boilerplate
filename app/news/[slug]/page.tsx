@@ -18,8 +18,6 @@ type Article = {
   mainImageUrl?: string;
 };
 
-
-
 type FetchState =
   | { status: "idle" }
   | { status: "loading" }
@@ -47,15 +45,18 @@ export default function NewsArticlePageClient() {
   const [state, setState] = useState<FetchState>({ status: "idle" });
 
   useEffect(() => {
-    // slug veya id yoksa fetch yapmanın anlamı yok
     if (!slug && !id) return;
 
     let cancelled = false;
+
     const fetchArticle = async () => {
       setState({ status: "loading" });
 
       try {
-             const url = "/api/articles?turkey_first=true";
+        // Artık kendi API route'umuza istek atıyoruz:
+        // /api/articles?turkey_first=true  -> JSON Article[]
+        const url = "/api/articles?turkey_first=true";
+
         const res = await fetch(url);
         if (!res.ok) {
           const text = await res.text();
@@ -82,9 +83,10 @@ export default function NewsArticlePageClient() {
 
         // Önce id ile ara, yoksa slug ile
         const foundById = id ? data.find((a) => a.id === id) : undefined;
-        const foundBySlug = !foundById && slug
-          ? data.find((a) => a.slug === slug)
-          : undefined;
+        const foundBySlug =
+          !foundById && slug
+            ? data.find((a) => a.slug === slug)
+            : undefined;
 
         const article = foundById ?? foundBySlug;
 
@@ -115,7 +117,8 @@ export default function NewsArticlePageClient() {
     };
   }, [slug, id]);
 
-  // Basit durum yönetimi
+  // Durumlara göre render
+
   if (!slug && !id) {
     return (
       <MainWrapper>
@@ -130,7 +133,7 @@ export default function NewsArticlePageClient() {
     );
   }
 
-  if (state.status === "loading" || state.status === "idle") {
+  if (state.status === "idle" || state.status === "loading") {
     return (
       <MainWrapper>
         <CenteredBox title="Yükleniyor...">
@@ -172,7 +175,6 @@ export default function NewsArticlePageClient() {
     );
   }
 
-  // success durumu
   const article = state.article;
 
   return (
@@ -197,7 +199,7 @@ export default function NewsArticlePageClient() {
           {article.title}
         </h1>
 
-        {/* Kaynak satırı */}
+        {/* Kaynak */}
         {(article.source || article.sourceUrl) && (
           <p className="mb-6 text-sm text-slate-400">
             Kaynak:{" "}
@@ -244,7 +246,7 @@ export default function NewsArticlePageClient() {
           )}
         </article>
 
-        {/* Debug kutusu */}
+        {/* Debug */}
         <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-500">
           <p>
             Debug — slug (URL&apos;den): <code>{slug}</code>
@@ -261,9 +263,8 @@ export default function NewsArticlePageClient() {
   );
 }
 
-/**
- * Basit layout helper'ları
- */
+/* Basit layout helper'ları */
+
 function MainWrapper({ children }: { children: React.ReactNode }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-100">
