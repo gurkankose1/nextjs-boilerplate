@@ -1,244 +1,483 @@
-"use client";
-
-import { useEffect, useState } from "react";
+// app/page.tsx
 import Link from "next/link";
+import { adminDb } from "@/lib/firebaseAdmin";
 
-type Article = {
+const SITE_NAME =
+  process.env.NEXT_PUBLIC_SITE_NAME && process.env.NEXT_PUBLIC_SITE_NAME.trim()
+    ? process.env.NEXT_PUBLIC_SITE_NAME
+    : "SkyNews.Tr";
+
+type ArticleCard = {
   id: string;
   title: string;
-  summary?: string;
-  slug?: string;
-  category?: string;
-  mainImageUrl?: string;
-  createdAt?: string;
-  published?: string;
+  slug: string;
+  metaDesc?: string | null;
+  category?: string | null;
+  publishedAt?: string | null;
+  seoTitle?: string | null;
+  views?: number | null;
+  editorName?: string | null;
+  mainImageUrl?: string | null;
 };
 
-type FetchState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "error"; error: string }
-  | { status: "success"; items: Article[] };
+type GundemMessage = {
+  id: string;
+  displayName: string;
+  company?: string | null;
+  message: string;
+  createdAt: string | null;
+};
 
-const API_URL = "/api/articles";
+type CategoryKey =
+  | "all"
+  | "airlines"
+  | "airports"
+  | "ground-handling"
+  | "military-aviation"
+  | "accidents";
 
-export default function HomePage() {
-  const [state, setState] = useState<FetchState>({ status: "idle" });
+const CATEGORY_FILTERS: { key: CategoryKey; label: string }[] = [
+  { key: "all", "label": "Tümü" },
+  { key: "airlines", "label": "Havayolları" },
+  { key: "airports", "label": "Havalimanları" },
+  { key: "ground-handling", "label": "Yer Hizmetleri" },
+  { key: "military-aviation", "label": "Askerî Havacılık" },
+  { key: "accidents", "label": "Kaza / Olay" },
+];
 
-  useEffect(() => {
-    let cancelled = false;
+const CATEGORY_LABEL_MAP: Record<string, string> = CATEGORY_FILTERS.reduce(
+  (acc, item) => {
+    if (item.key !== "all") {
+      acc[item.key] = item.label;
+    }
+    return acc;
+  },
+  {} as Record<string, string>
+);
 
-    const load = async () => {
-      setState({ status: "loading" });
+const VALID_CATEGORIES = new Set<string>(
+  CATEGORY_FILTERS.map((c) => c.key).filter((k) => k !== "all")
+);
 
-      try {
-        const res = await fetch(API_URL);
-        if (!res.ok) {
-          const text = await res.text();
-          if (!cancelled) {
-            setState({
-              status: "error",
-              error: `Liste çekilemedi: ${res.status} ${text}`,
-            });
-          }
-          return;
-        }
+function normalizeCategory(category: string | null | undefined): CategoryKey {
+  if (!category) return "all";
+  const lower = String(category).trim().toLowerCase();
+  if (VALID_CATEGORIES.has(lower)) {
+    return lower as CategoryKey;
+  }
+  return "all";
+}
 
-        const data = (await res.json()) as Article[];
+function getEditorName(category: string | null | undefined): string {
+  const normalized = normalizeCategory(category);
+  switch (normalized) {
+    case "airlines":
+      return "Metehan Özülkü";
+    case "airports":
+      return "Kemal Kahraman";
+    case "ground-handling":
+      return "Hafife Kandemir";
+    case "military-aviation":
+      return "Musa Demirbilek";
+    case "accidents":
+      return "Editör Ekibi";
+    default:
+      return "Editör Ekibi";
+  }
+}
 
-        if (!Array.isArray(data)) {
-          if (!cancelled) {
-            setState({
-              status: "error",
-              error: "API yanıtı dizi formatında değil.",
-            });
-          }
-          return;
-        }
+async function getArticlesAndGundemMessages() {
+  const articlesSnap = await adminDb
+    .collection("articles")
+    .orderBy("createdAt", "desc")
+    .limit(32)
+    .get();
 
-        // En son eklenenler en üstte olsun diye gerekirse createdAt'e göre sıralayabiliriz
-        const sorted = [...data].sort((a, b) => {
-          const aTime = a.published ?? a.createdAt ?? "";
-          const bTime = b.published ?? b.createdAt ?? "";
-          return aTime < bTime ? 1 : aTime > bTime ? -1 : 0;
-        });
+  const articles: ArticleCard[] = articlesSnap.docs.map((doc) => {
+    const data = doc.data() || {};
 
-        if (!cancelled) {
-          setState({ status: "success", items: sorted });
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setState({
-            status: "error",
-            error: err?.message ?? "Bilinmeyen hata",
-          });
-        }
+    // publishedAt alanını mümkün olduğunca doldur: publishedAt > published > createdAt
+    const rawPublished =
+      data.publishedAt ?? data.published ?? data.createdAt ?? null;
+
+    let publishedAt: string | null = null;
+    if (rawPublished) {
+      if (typeof rawPublished === "string") {
+        publishedAt = rawPublished;
+      } else if (rawPublished instanceof Date) {
+        publishedAt = rawPublished.toISOString();
+      } else if (typeof (rawPublished as any).toDate === "function") {
+        // Firestore Timestamp desteği
+        publishedAt = (rawPublished as any).toDate().toISOString();
+      } else {
+        publishedAt = String(rawPublished);
       }
+    }
+
+    return {
+      id: doc.id,
+      title: data.title || data.seoTitle || "Başlıksız Haber",
+      slug: data.slug || doc.id,
+      // summary alanını da fallback olarak kullan
+      metaDesc: data.metaDesc ?? data.summary ?? null,
+      category: normalizeCategory(data.category ?? null),
+      publishedAt,
+      seoTitle: data.seoTitle ?? null,
+      views: typeof data.views === "number" ? data.views : 0,
+      editorName: getEditorName(data.category ?? null),
+      mainImageUrl: data.mainImageUrl ?? null,
     };
+  });
 
-    load();
-    return () => {
-      cancelled = true;
+  const gundemSnap = await adminDb
+    .collection("gundem_messages")
+    .orderBy("createdAt", "desc")
+    .limit(10)
+    .get();
+
+  const latestGundemMessages: GundemMessage[] = gundemSnap.docs.map((doc) => {
+    const data = doc.data() || {};
+    return {
+      id: doc.id,
+      displayName: data.displayName || "Anonim",
+      company: data.company || null,
+      message: data.message || "",
+      createdAt: data.createdAt || null,
     };
-  }, []);
+  });
 
-  // Durumlara göre ekran
+  return { articles, latestGundemMessages };
+}
 
-  if (state.status === "idle" || state.status === "loading") {
-    return (
-      <main className="min-h-screen bg-slate-950 text-slate-100">
-        <div className="mx-auto max-w-6xl px-4 py-12">
-          <HeaderHero />
+export const revalidate = 60;
 
-          <div className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-48 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/60"
-              />
-            ))}
-          </div>
-        </div>
-      </main>
-    );
-  }
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: { category?: string };
+}) {
+  const categoryParam =
+    typeof searchParams?.category === "string"
+      ? searchParams.category
+      : undefined;
 
-  if (state.status === "error") {
-    return (
-      <main className="min-h-screen bg-slate-950 text-slate-100">
-        <div className="mx-auto max-w-3xl px-4 py-12">
-          <HeaderHero />
-          <div className="mt-10 rounded-2xl border border-red-500/40 bg-red-500/10 p-6 text-sm">
-            <p className="font-semibold mb-2">Hata oluştu</p>
-            <p className="whitespace-pre-wrap text-red-200">
-              {state.error}
-            </p>
-          </div>
-        </div>
-      </main>
-    );
-  }
+  const activeCategory: CategoryKey = (CATEGORY_FILTERS.some(
+    (c) => c.key === categoryParam
+  )
+    ? categoryParam
+    : "all") as CategoryKey;
 
-  const items = state.items;
+  const { articles, latestGundemMessages } = await getArticlesAndGundemMessages();
+
+  const now = Date.now();
+  const recentCutoff = now - 24 * 60 * 60 * 1000;
+
+  const heroArticle =
+    articles.find((art) => {
+      if (!art.publishedAt) return false;
+      const publishedTime = new Date(art.publishedAt).getTime();
+      const hoursDiff = (now - publishedTime) / (1000 * 60 * 60);
+      return (
+        publishedTime >= recentCutoff &&
+        (["airlines", "airports", "ground-handling"] as CategoryKey[]).includes(
+          normalizeCategory(art.category)
+        ) &&
+        hoursDiff > 0
+      );
+    }) ?? articles[0];
+
+  const filteredArticles =
+    activeCategory === "all"
+      ? articles
+      : articles.filter(
+          (art) => normalizeCategory(art.category) === activeCategory
+        );
+
+  const mostReadArticles = [...articles]
+    .sort((a, b) => (b.views ?? 0) - (a.views ?? 0))
+    .slice(0, 5);
+
+  const heroPublishedDate = heroArticle?.publishedAt
+    ? new Date(heroArticle.publishedAt)
+    : null;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-6xl px-4 py-8 md:py-12">
-        <HeaderHero />
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:py-10">
+        {/* Sol taraf: Hero + filtre + liste */}
+        <div className="flex-1 space-y-6">
+          <header className="border-b border-slate-800 pb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">
+                  {SITE_NAME}
+                </h1>
+                <p className="text-xs text-slate-400 sm:text-sm">
+                  Dünyanın dört bir yanından havacılık haberleri, Türk
+                  havacılığına odaklı editör kadrosu ile.
+                </p>
+              </div>
+              <div className="flex gap-2 text-[11px] text-slate-400">
+                <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-1">
+                  Canlı akış • RSS + Gemini
+                </span>
+                <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-1">
+                  Önce Türk havacılığı
+                </span>
+              </div>
+            </div>
 
-        {items.length === 0 ? (
-          <div className="mt-10 rounded-2xl border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-300">
-            Henüz yayınlanmış haber bulunmuyor. Firestore'daki{" "}
-            <code className="text-xs bg-slate-800 px-1 py-0.5 rounded">
-              articles
-            </code>{" "}
-            koleksiyonuna doküman eklediğinde burada otomatik görünecek.
-          </div>
-        ) : (
-          <section className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((article) => {
-              const hasSlug = !!article.slug;
-              const linkHref = hasSlug
-                ? `/news/${article.slug}?id=${article.id}`
-                : `/news/${article.id}?id=${article.id}`;
+            <nav className="mt-4 flex flex-wrap gap-2 text-xs">
+              {CATEGORY_FILTERS.map((item) => {
+                const isActive = item.key === activeCategory;
+                return (
+                  <Link
+                    key={item.key}
+                    href={
+                      item.key === "all"
+                        ? "/"
+                        : `/?category=${encodeURIComponent(item.key)}`
+                    }
+                    className={[
+                      "rounded-full border px-3 py-1 transition",
+                      isActive
+                        ? "border-sky-500 bg-sky-500/20 text-sky-100"
+                        : "border-slate-700 bg-slate-900/60 text-slate-300 hover:border-sky-500/60 hover:text-sky-100",
+                    ].join(" ")}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </header>
 
-              const dateText = article.published ?? article.createdAt ?? "";
+          {/* Hero Kart */}
+          {heroArticle && (
+            <section className="mt-4 overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 shadow-lg">
+              <Link
+                href={`/news/${encodeURIComponent(
+                  heroArticle.slug
+                )}?id=${encodeURIComponent(heroArticle.id)}`}
+                className="group flex flex-col md:flex-row"
+              >
+                <div className="flex-1 space-y-3 p-5 md:p-6">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                    {heroArticle.category && (
+                      <span className="rounded-full border border-slate-700 px-2 py-0.5 uppercase tracking-wide">
+                        {CATEGORY_LABEL_MAP[heroArticle.category] ??
+                          heroArticle.category}
+                      </span>
+                    )}
+                    {heroPublishedDate && (
+                      <span>
+                        {heroPublishedDate.toLocaleString("tr-TR", {
+                          day: "2-digit",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    )}
+                    <span>Yazar: {heroArticle.editorName ?? "Editör"}</span>
+                  </div>
+                  <h2 className="text-lg font-semibold leading-tight text-slate-50 md:text-xl">
+                    {heroArticle.title}
+                  </h2>
+                  {heroArticle.metaDesc && (
+                    <p className="text-sm text-slate-300 line-clamp-3">
+                      {heroArticle.metaDesc}
+                    </p>
+                  )}
+                  <div className="mt-3 flex items-center gap-3 text-xs text-slate-400">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                      Öne çıkan haber
+                    </span>
+                    <span>Detayları oku →</span>
+                  </div>
+                </div>
+                {heroArticle.mainImageUrl && (
+                  <div className="relative h-48 w-full overflow-hidden border-t border-slate-800 md:h-auto md:w-64 md:border-l">
+                    <img
+                      src={heroArticle.mainImageUrl}
+                      alt={heroArticle.title}
+                      className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                    />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent" />
+                  </div>
+                )}
+              </Link>
+            </section>
+          )}
+
+          {/* Liste */}
+          <section className="mt-6 space-y-4">
+            {filteredArticles.map((art) => {
+              const publishedDate = art.publishedAt
+                ? new Date(art.publishedAt)
+                : null;
+              const articleHref = `/news/${encodeURIComponent(
+                art.slug
+              )}?id=${encodeURIComponent(art.id)}`;
 
               return (
-                <Link
-                  key={article.id}
-                  href={linkHref}
-                  className="group flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/60 transition hover:border-sky-500/60 hover:bg-slate-900"
+                <article
+                  key={art.id}
+                  className="flex gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 transition hover:border-sky-500/60 hover:bg-slate-950"
                 >
-                  {/* Kapak görseli */}
-                  {article.mainImageUrl ? (
-                    <div className="relative h-44 w-full overflow-hidden">
+                  {art.mainImageUrl && (
+                    <Link
+                      href={articleHref}
+                      className="relative hidden h-24 w-32 overflow-hidden rounded-xl border border-slate-800 sm:block"
+                    >
                       <img
-                        src={article.mainImageUrl}
-                        alt={article.title}
-                        className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                        src={art.mainImageUrl}
+                        alt={art.title}
+                        className="h-full w-full object-cover"
                       />
-                      {article.category && (
-                        <span className="absolute left-3 top-3 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-medium uppercase tracking-wide text-slate-100">
-                          {article.category}
+                    </Link>
+                  )}
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                      {art.category && (
+                        <span className="rounded-full border border-slate-700 px-2 py-0.5 uppercase tracking-wide">
+                          {CATEGORY_LABEL_MAP[art.category] ?? art.category}
                         </span>
                       )}
-                    </div>
-                  ) : (
-                    <div className="flex h-40 items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-                      <div className="flex flex-col gap-1">
-                        {article.category && (
-                          <span className="inline-flex w-fit rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
-                            {article.category}
-                          </span>
-                        )}
-                        <span className="text-xs text-slate-400">
-                          {dateText
-                            ? new Date(dateText).toLocaleString("tr-TR")
-                            : "Tarih bilgisi yok"}
-                        </span>
-                      </div>
-                      <div className="h-12 w-12 rounded-xl border border-slate-700 bg-slate-800/60" />
-                    </div>
-                  )}
-
-                  {/* Metin kısmı */}
-                  <div className="flex flex-1 flex-col px-4 py-3">
-                    <h2 className="line-clamp-2 text-sm font-semibold leading-snug md:text-base">
-                      {article.title || "Başlıksız haber"}
-                    </h2>
-
-                    {article.summary && (
-                      <p className="mt-2 line-clamp-3 text-xs text-slate-400 md:text-sm">
-                        {article.summary}
-                      </p>
-                    )}
-
-                    <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
-                      {dateText && (
+                      {publishedDate && (
                         <span>
-                          {new Date(dateText).toLocaleDateString("tr-TR", {
+                          {publishedDate.toLocaleString("tr-TR", {
                             day: "2-digit",
                             month: "short",
-                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
                           })}
                         </span>
                       )}
-                      <span className="inline-flex items-center gap-1 text-sky-400 group-hover:text-sky-300">
-                        Habere git
-                        <span aria-hidden>↗</span>
-                      </span>
+                      {typeof art.views === "number" && art.views > 0 && (
+                        <span>{art.views} okunma</span>
+                      )}
+                      <span>Yazar: {art.editorName ?? "Editör"}</span>
                     </div>
+                    <Link href={articleHref}>
+                      <h3 className="text-sm font-semibold text-slate-50 md:text-base">
+                        {art.title}
+                      </h3>
+                    </Link>
+                    {art.metaDesc && (
+                      <p className="text-xs text-slate-400 line-clamp-2 md:text-sm">
+                        {art.metaDesc}
+                      </p>
+                    )}
                   </div>
-                </Link>
-            );
+                </article>
+              );
             })}
           </section>
+        </div>
+
+        {/* Sağ kolon: en çok okunanlar + gündem */}
+        {mostReadArticles.length > 0 && (
+          <div className="w-full space-y-6 lg:w-72">
+            {/* En çok okunanlar */}
+            <aside className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+              <h2 className="mb-3 text-sm font-semibold text-slate-100">
+                En Çok Okunanlar
+              </h2>
+              <div className="space-y-2">
+                {mostReadArticles.map((art) => {
+                  const href = `/news/${encodeURIComponent(
+                    art.slug
+                  )}?id=${encodeURIComponent(art.id)}`;
+                  return (
+                    <Link
+                      key={art.id}
+                      href={href}
+                      className="group flex gap-2 rounded-xl border border-transparent px-2 py-1.5 text-xs text-slate-300 transition hover:border-sky-500/60 hover:bg-slate-900"
+                    >
+                      <div className="mt-1 h-1.5 w-1.5 rounded-full bg-sky-400" />
+                      <div className="flex-1">
+                        <p className="line-clamp-2 group-hover:text-sky-100">
+                          {art.title}
+                        </p>
+                        {typeof art.views === "number" && art.views > 0 && (
+                          <p className="text-[10px] text-slate-500">
+                            {art.views} okunma
+                          </p>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </aside>
+
+            {/* Gündem Havacılık */}
+            <aside className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-100">
+                  Gündem Havacılık
+                </h2>
+                <Link
+                  href="/gundem"
+                  className="text-[11px] text-sky-400 hover:text-sky-300"
+                >
+                  Tümünü gör →
+                </Link>
+              </div>
+
+              {latestGundemMessages.length === 0 ? (
+                <p className="mt-3 text-xs text-slate-400">
+                  Henüz gündem mesajı yok. İlk sen yazmak ister misin?
+                </p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {latestGundemMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className="rounded-xl border border-slate-800 bg-slate-900/80 p-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[11px] font-medium text-slate-100">
+                          {msg.displayName}
+                          {msg.company && (
+                            <span className="text-[10px] text-slate-400">
+                              {" "}
+                              • {msg.company}
+                            </span>
+                          )}
+                        </div>
+                        {msg.createdAt && (
+                          <div className="text-[10px] text-slate-500">
+                            {new Date(msg.createdAt).toLocaleDateString(
+                              "tr-TR",
+                              {
+                                day: "2-digit",
+                                month: "short",
+                              }
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-200 line-clamp-2">
+                        {msg.message}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="mt-3 w-full rounded-full border border-slate-700 bg-slate-900/60 px-3 py-2 text-center text-[13px] font-semibold text-sky-300 hover:bg-slate-800/80 transition"
+              >
+                Gündeme katılmak için /gundem sayfasına git
+              </button>
+            </aside>
+          </div>
         )}
       </div>
     </main>
-  );
-}
-
-/** Üst kısımdaki basit hero / header */
-function HeaderHero() {
-  return (
-    <header className="mb-4">
-      <p className="text-xs uppercase tracking-[0.35em] text-sky-400/80">
-        SkyNews.Tr
-      </p>
-      <h1 className="mt-2 text-2xl font-semibold text-slate-50 md:text-3xl">
-        Havacılık gündemini tek ekranda toplayan{" "}
-        <span className="text-sky-400">SkyNews.Tr</span>
-      </h1>
-      <p className="mt-2 max-w-2xl text-sm text-slate-400 md:text-base">
-        Firestore&apos;daki{" "}
-        <code className="rounded bg-slate-800 px-1 py-0.5 text-xs">
-          articles
-        </code>{" "}
-        koleksiyonuna eklediğin haberler burada otomatik listelenir. Kartlara
-        tıklayınca detay sayfası açılır.
-      </p>
-    </header>
   );
 }
