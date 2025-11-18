@@ -28,6 +28,19 @@ type GundemMessage = {
   createdAt: string | null;
 };
 
+type PollOption = {
+  id: string;
+  text: string;
+  votes: number;
+};
+
+type Poll = {
+  id: string;
+  question: string;
+  options: PollOption[];
+  totalVotes: number;
+};
+
 type CategoryKey =
   | "all"
   | "airlines"
@@ -143,7 +156,48 @@ async function getArticlesAndGundemMessages() {
     };
   });
 
-  return { articles, latestGundemMessages };
+  // Aktif anketi çek (polls koleksiyonu varsayımı)
+  let activePoll: Poll | null = null;
+
+  try {
+    const pollSnap = await adminDb
+      .collection("polls")
+      .where("isActive", "==", true)
+      .orderBy("createdAt", "desc")
+      .limit(1)
+      .get();
+
+    if (!pollSnap.empty) {
+      const pollDoc = pollSnap.docs[0];
+      const data = pollDoc.data() || {};
+      const optionsRaw: any[] = Array.isArray(data.options)
+        ? data.options
+        : [];
+
+      const options: PollOption[] = optionsRaw.map((opt, index) => ({
+        id: opt.id ?? String(index),
+        text: opt.text ?? "Seçenek",
+        votes: typeof opt.votes === "number" ? opt.votes : 0,
+      }));
+
+      const totalVotes = options.reduce(
+        (sum, o) => sum + (o.votes || 0),
+        0
+      );
+
+      activePoll = {
+        id: pollDoc.id,
+        question: data.question || "Bu haftanın anketi",
+        options,
+        totalVotes,
+      };
+    }
+  } catch (_e) {
+    // polls koleksiyonu yoksa / index yoksa sessizce yoksay
+    activePoll = null;
+  }
+
+  return { articles, latestGundemMessages, activePoll };
 }
 
 export const revalidate = 60;
@@ -164,7 +218,8 @@ export default async function HomePage({
     ? categoryParam
     : "all") as CategoryKey;
 
-  const { articles, latestGundemMessages } = await getArticlesAndGundemMessages();
+  const { articles, latestGundemMessages, activePoll } =
+    await getArticlesAndGundemMessages();
 
   const now = Date.now();
   const recentCutoff = now - 24 * 60 * 60 * 1000;
@@ -280,7 +335,7 @@ export default async function HomePage({
         )}
       </header>
 
-      {/* ORTA BÖLÜM: HERO + LİSTE + SAĞDA EN ÇOK OKUNANLAR */}
+      {/* ORTA BÖLÜM: HERO + LİSTE + SAĞDA EN ÇOK OKUNANLAR + ANKET */}
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:py-10">
         {/* Sol taraf: Hero + filtre + liste */}
         <div className="flex-1 space-y-6">
@@ -452,9 +507,10 @@ export default async function HomePage({
           </section>
         </div>
 
-        {/* Sağ kolon: sadece En Çok Okunanlar */}
+        {/* Sağ kolon: En Çok Okunanlar + Haftanın Anketi */}
         {mostReadArticles.length > 0 && (
           <div className="w-full space-y-6 lg:w-72">
+            {/* En Çok Okunanlar */}
             <aside className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
               <h2 className="mb-3 text-sm font-semibold text-slate-100">
                 En Çok Okunanlar
@@ -486,6 +542,50 @@ export default async function HomePage({
                 })}
               </div>
             </aside>
+
+            {/* Haftanın Anketi (aktif anket varsa) */}
+            {activePoll && (
+              <aside className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+                <h2 className="mb-3 text-sm font-semibold text-slate-100">
+                  Haftanın Anketi
+                </h2>
+                <p className="mb-3 text-xs text-slate-300">
+                  {activePoll.question}
+                </p>
+                <div className="space-y-2">
+                  {activePoll.options.map((opt) => {
+                    const total = activePoll.totalVotes || 0;
+                    const ratio =
+                      total > 0
+                        ? Math.round((opt.votes / total) * 100)
+                        : 0;
+
+                    return (
+                      <div key={opt.id} className="space-y-1 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-slate-200">
+                            {opt.text}
+                          </span>
+                          <span className="text-slate-400">
+                            {opt.votes} oy • {ratio}%
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                          <div
+                            className="h-full rounded-full bg-sky-500"
+                            style={{ width: `${ratio}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-[10px] text-slate-500">
+                  Toplam {activePoll.totalVotes} oy • Anket sonuçları
+                  haftalık olarak Gemini ile yorumlanacak.
+                </p>
+              </aside>
+            )}
           </div>
         )}
       </div>
