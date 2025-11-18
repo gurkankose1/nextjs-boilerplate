@@ -26,45 +26,15 @@ type PageProps = {
 };
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "https://skynews-web.vercel.app";
+  process.env.NEXT_PUBLIC_API_URL ?? "https://skynews-web.vercel.app/";
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ??
   "https://nextjs-boilerplate-sand-mu-98.vercel.app";
 
 /**
- * Haberi ID ile API'den çeker.
- * Linkin şu formatta olduğu için:
- *   /news/...slug...?id=FIRESTORE_ID
- * burada asıl kritik olan ID'dir, slug sadece SEO içindir.
+ * URL query'sinden id parametresini çeker (id bir array de olabilir).
  */
-async function fetchArticleById(id: string | null): Promise<Article | null> {
-  if (!id) return null;
-
-  const base = API_BASE.replace(/\/$/, "");
-
-  // Burada backend'inin tekil haber endpoint'ini ID ile çağırıyoruz.
-  // Örn: GET /articles/{id}
-  const url = `${base}/articles/${encodeURIComponent(id)}`;
-
-  const res = await fetch(url, {
-    next: { revalidate: 60 }
-  });
-
-  if (!res.ok) {
-    console.error("Article fetch failed", res.status, await res.text());
-    return null;
-  }
-
-  const data = (await res.json()) as Article | null;
-
-  if (!data || !data.id) {
-    return null;
-  }
-
-  return data;
-}
-
 function getIdFromSearchParams(
   searchParams: PageProps["searchParams"]
 ): string | null {
@@ -75,20 +45,66 @@ function getIdFromSearchParams(
   return raw;
 }
 
+/**
+ * Haberleri list endpoint'inden çeker ve
+ * gelen dizide id veya slug'a göre ilgili haberi bulur.
+ *
+ * Anasayfada çalışan endpoint ile aynı mantığı kullanıyoruz:
+ * GET /articles?turkey_first=true  → Article[]
+ */
+async function fetchArticle(
+  id: string | null,
+  slug: string | null
+): Promise<Article | null> {
+  if (!id && !slug) return null;
+
+  const base = API_BASE.replace(/\/$/, "");
+  const url = `${base}/articles?turkey_first=true`;
+
+  const res = await fetch(url, {
+    next: { revalidate: 60 }
+  });
+
+  if (!res.ok) {
+    console.error("Article list fetch failed", res.status, await res.text());
+    return null;
+  }
+
+  const data = (await res.json()) as Article[];
+
+  if (!Array.isArray(data)) {
+    console.error("Article list response is not an array");
+    return null;
+  }
+
+  // Önce id ile arıyoruz
+  let found =
+    (id && data.find((a) => a.id === id)) ||
+    // id bulunamazsa slug ile arıyoruz
+    (slug && data.find((a) => a.slug === slug));
+
+  if (!found) {
+    console.warn("Article not found in list", { id, slug });
+    return null;
+  }
+
+  return found;
+}
+
 export async function generateMetadata(
   { params, searchParams }: PageProps
 ): Promise<Metadata> {
-  const slug = params?.slug;
+  const slug = params?.slug ?? null;
   const id = getIdFromSearchParams(searchParams);
 
-  if (!slug || !id) {
+  if (!slug && !id) {
     return {
       title: "Haber bulunamadı | SkyNews.Tr",
       description: "Aradığınız haber bulunamadı."
     };
   }
 
-  const article = await fetchArticleById(id);
+  const article = await fetchArticle(id, slug);
 
   if (!article) {
     return {
@@ -109,7 +125,7 @@ export async function generateMetadata(
       title,
       description,
       type: "article",
-      url: `${SITE_URL}/news/${article.slug}`,
+      url: `${SITE_URL}/news/${article.slug}?id=${article.id}`,
       images: article.mainImageUrl
         ? [{ url: article.mainImageUrl }]
         : [{ url: "/og-default.jpg" }]
@@ -121,15 +137,15 @@ export default async function NewsArticlePage({
   params,
   searchParams
 }: PageProps) {
-  const slug = params?.slug;
+  const slug = params?.slug ?? null;
   const id = getIdFromSearchParams(searchParams);
 
-  if (!slug || !id) {
-    console.error("Slug veya ID eksik:", { slug, id });
+  if (!slug && !id) {
+    console.error("Slug ve ID eksik:", { slug, id });
     notFound();
   }
 
-  const article = await fetchArticleById(id);
+  const article = await fetchArticle(id, slug);
 
   if (!article) {
     notFound();
@@ -204,7 +220,7 @@ export default async function NewsArticlePage({
           )}
         </article>
 
-        {/* Debug */}
+        {/* Debug kutusu */}
         <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-500">
           <p>
             Debug — slug (URL&apos;den): <code>{slug}</code>
