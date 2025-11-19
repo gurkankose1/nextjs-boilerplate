@@ -4,23 +4,22 @@
     pkgs.nodejs_20
   ];
   idx.extensions = [
-    
+    # Proje için önerilen VS Code eklentilerini buraya ekleyebilirsiniz.
+    # Örnek: "vscodevim.vim"
   ];
   idx.previews = {
-    previews = {
-      web = {
-        command = [
-          "npm"
-          "run"
-          "dev"
-          "--"
-          "--port"
-          "$PORT"
-          "--hostname"
-          "0.0.0.0"
-        ];
-        manager = "web";
-      };
+    web = {
+      command = [
+        "npm"
+        "run"
+        "dev"
+        "--"
+        "--port"
+        "$PORT"
+        "--hostname"
+        "0.0.0.0"
+      ];
+      manager = "web";
     };
   };
 }
