@@ -7,9 +7,8 @@
     # Proje için önerilen VS Code eklentilerini buraya ekleyebilirsiniz.
     # Örnek: "vscodevim.vim"
   ];
-  idx.previews = [
-    {
-      id = "web";
+  idx.previews = {
+    web = {
       command = [
         "npm"
         "run"
@@ -21,6 +20,6 @@
         "0.0.0.0"
       ];
       manager = "web";
-    }
-  ];
+    };
+  };
 }
