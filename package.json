@@ -10,6 +10,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "date-fns": "^4.1.0",
     "firebase": "^12.6.0",
     "firebase-admin": "^12.5.0",
     "geist": "^1.5.1",

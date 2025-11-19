@@ -1,0 +1,157 @@
+################################################################################
+#                 YENİ ve DOĞRU KOMUTLAR - SON DENEME
+#
+# TALİMATLAR:
+# 1. Bu dosyayı açın.
+# 2. Aşağıdaki her bir "Adım"ı sırayla uygulayın.
+# 3. Terminal size "What environment variable name...?" diye sorarsa, HİÇBİR ŞEY YAZMADAN sadece ENTER'a basın.
+# 4. Her şey bittikten sonra `firebase deploy --only apphosting` komutunu çalıştırın.
+################################################################################
+
+
+=== 1. Adım: GEMINI_API_KEY ===
+# Bu isimde sorun yoktu, aynı şekilde devam.
+Komut (Aşağıdaki satırı kopyalayıp terminalde çalıştırın):
+firebase apphosting:secrets:set GEMINI_API_KEY
+
+Değer (Yukarıdaki komut sorduğunda, aşağıdaki satırı kopyalayıp yapıştırın):
+AIzaSyCoSYE2rsUKP07xcEHxJUTeKKU2wP_1c5U
+
+---
+
+=== 2. Adım: ADMIN_PROJECT_ID (YENİ İSİM) ===
+# 'FIREBASE_' öneki kaldırıldı.
+Komut:
+firebase apphosting:secrets:set ADMIN_PROJECT_ID
+
+Değer:
+skynewstr-2dd71
+
+---
+
+=== 3. Adım: ADMIN_CLIENT_EMAIL (YENİ İSİM) ===
+# 'FIREBASE_' öneki kaldırıldı.
+Komut:
+firebase apphosting:secrets:set ADMIN_CLIENT_EMAIL
+
+Değer:
+firebase-adminsdk-fbsvc@skynewstr-2dd71.iam.gserviceaccount.com
+
+---
+
+=== 4. Adım: ADMIN_PRIVATE_KEY (YENİ İSİM) ===
+# 'FIREBASE_' öneki kaldırıldı.
+Komut:
+firebase apphosting:secrets:set ADMIN_PRIVATE_KEY
+
+Değer (Aşağıdaki metnin tamamını kopyalayın, '-----BEGIN' ile başlayıp 'END PRIVATE KEY-----' ile bitmeli):
+-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCyQB9uzQnQRaEc
+wX05HJm2xFn//R5QSAlmgwdSwkEeuJ66euHKAAgYAwXPSfUsCJwgBLcoEYUuNyqc
+BPP5cKe7+1Mo8NPzjxbGqzDVyDK260CQ77Atz7rf546lC7nTfNaO0xNQidnB6mXQ
+BIA7pXTHF/auIYzIXJYqLaO0IWIherp3NPMBDG9ozFEqB+4UPOggpi965SUQSLim
+UNyY5mFuD1M2cA2+c0OBXyBSJjJOnrqPLg057vnRHGLwKvu8G0WiYs2Lvuk0oRJa
+pPiNn+eNigyYFBSCv0RuGvzOHl1bZskzj1D0z2ZX0omWjJCqPJA2/4gbHdkmyIiC
+VSxkOG97AgMBAAECggEAG05OYmNfjvuzqBuN6stSUti2bswgMi0u33jQDOH8JtAi
+ZK/BWffyRXdlEvGh8Lpq7E68nhM9AyzpRphNpZcX4uinvxxRY7y2QP3lj8JI3pOg
+QvOs2f+6AWXQCMGImHjFx4BXM53CcX3OVfTyjfCVOJCXteomzmS8jj6KluQMS9Nm
+/vhD47+YJBMh4sbV8tIiHVBNinHZo81+6qOwUxvJXqu//VMCUSn/Y9lEKArZEEvP
+0RcRBL2pCRibAHcHmSL8/I0WQC63D1xrTLwOK/iDFJ0tNTU6Uerq5e32JmD6XYnz
+p9hNPGfh7Z6sY7bbefDVOpz4qZLtSTf2wMb6CuQLtQKBgQDo4Q5/8aoVse6d3l44
+Rj9/jhcWLqCVTC5OqSUtzWPWLVqW+Anw2HcZmAwvmIICOsh83k3JU1DUv8BktA3O
+dcAys8AXiuAjrKmA2iZD6N/1KAhTZcrt+iqo0vpdy7DvpC/tIFWAUPRg/91/8a10
+rFZpbqn5pm4HBQDV4jsQNXVAlQKBgQDD8pqaLPa4h3FxtrdLqO/1knWG2Wi6626u
+/I5T4eiA3OYVyFZWhbebhwHt0rhECi0DG9x5z601M8rjEERkpGuerhHNuT5cuiZx
+1zV8ojvB3kCDeO7h4sCs33TRVhziBHgRsUjBaWU7L2xpjLeoN6wpbFCgyePuou1z
+PaS3TFObzwKBgGr8Wcj1oQnugI0OR4La4vkasgiCy0tLgEqq8mWkYiVXGLMaqJZ5
+G94qOA71pWSY1Npo1puTJyNWJHEfNuiOuAmTAsDOEELTY9vKXKH+LkVWatzFewDx
+WP/OTS8iENtHNq1dmWolxt95LK1GvkVHlztAl94VU57t8YBROokrxf4xAoGAcyoF
+P5Qpta61ODZBaJBz6AsaVBU3fpScyu/Y3ugpdINgH3FNfTC+BwTEV3i/oA2zAt6/
+KECs9lXoaqfG6rfQIMUB5b14L5uguMvZvdTD9l+f3yWWkOBqibATwm0wMI6b2xot
+Pq+pNa3bs/Vmg9Gkt/vXL4k5E6pikJasVqbfhPUCgYAxIsMZUbPX43SX57GBmvP9
+ATLu7vGEhEnL22bDkcv9S4Y4HQPFCh1dNm9fe6q37qg2NkMRHOvbhj2m5MWJr3P
+QGRFXiQuCKijb7Z+5iqsoHTSG4zYC2NxI5UJkh59agI8+wthALxsWf18r/04/kc2
+v68UnV07uFoclmo/+KQBrA==
+-----END PRIVATE KEY-----
+
+---
+
+=== 5. Adım: NEXT_PUBLIC_FIREBASE_API_KEY ===
+# 'NEXT_PUBLIC_' ile başlayanlarda sorun yok, aynı şekilde devam.
+Komut:
+firebase apphosting:secrets:set NEXT_PUBLIC_FIREBASE_API_KEY
+
+Değer:
+AIzaSyAJb83rtLyY1XI2enP6RBb8O3Va7gTbOpM
+
+---
+
+=== 6. Adım: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ===
+Komut:
+firebase apphosting:secrets:set NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+
+Değer:
+skynewstr-2dd71.firebaseapp.com
+
+---
+
+=== 7. Adım: NEXT_PUBLIC_FIREBASE_PROJECT_ID ===
+Komut:
+firebase apphosting:secrets:set NEXT_PUBLIC_FIREBASE_PROJECT_ID
+
+Değer:
+skynewstr-2dd71
+
+---
+
+=== 8. Adım: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ===
+Komut:
+firebase apphosting:secrets:set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+
+Değer:
+skynewstr-2dd71.firebasestorage.app
+
+---
+
+=== 9. Adım: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ===
+Komut:
+firebase apphosting:secrets:set NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+
+Değer:
+680663177893
+
+---
+
+=== 10. Adım: NEXT_PUBLIC_FIREBASE_APP_ID ===
+Komut:
+firebase apphosting:secrets:set NEXT_PUBLIC_FIREBASE_APP_ID
+
+Değer:
+1:680663177893:web:5642c8222b50688b9d0b4c
+
+---
+
+=== 11. Adım: CRON_SECRET ===
+# Bu isimde sorun yoktu, aynı şekilde devam.
+Komut:
+firebase apphosting:secrets:set CRON_SECRET
+
+Değer:
+sk_cron_f04c2a1e-7e89-4a1b-9df5-3a70c9a61a32
+
+---
+
+=== 12. Adım: ADMIN_SECRET ===
+# Bu isimde sorun yoktu, aynı şekilde devam.
+Komut:
+firebase apphosting:secrets:set ADMIN_SECRET
+
+Değer:
+sk_admin_demo_secret_123
+
+
+################################################################################
+#                           TÜM ADIMLAR TAMAMLANDI!
+#
+# Şimdi son olarak aşağıdaki deploy komutunu çalıştırabilirsiniz.
+# firebase deploy --only apphosting
+################################################################################

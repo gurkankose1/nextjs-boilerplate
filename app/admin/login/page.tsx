@@ -1,54 +1,62 @@
-// app/admin/login/page.tsx
-export default function AdminLoginPage() {
-  return (
-    <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900/80 px-6 py-6">
-        <h1 className="text-lg font-semibold tracking-tight text-slate-50">
-          Admin Girişi
-        </h1>
-        <p className="mt-1 text-xs text-slate-400">
-          Lütfen yönetim paneline erişmek için kullanıcı adı ve şifrenizi girin.
-        </p>
 
-        <form
-          action="/api/admin/login"
-          method="POST"
-          className="mt-4 space-y-4"
-        >
+'use client'
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function LoginPage() {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Giriş yapılamadı.');
+      }
+
+      router.push('/admin');
+
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center p-24 text-white bg-dots">
+      <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900/60 p-8 shadow-lg shadow-slate-950/40">
+        <h1 className="text-2xl font-semibold text-slate-50 mb-6 text-center">Yönetici Girişi</h1>
+        <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-[11px] font-semibold text-slate-300">
-              Kullanıcı Adı
-            </label>
+            <label htmlFor="password" className="block text-slate-400 text-sm font-bold mb-2">Şifre</label>
             <input
-              name="username"
-              autoComplete="username"
-              className="mt-1 w-full rounded border border-slate-700 bg-slate-950/60 px-2 py-1 text-xs text-slate-100 outline-none focus:border-sky-500"
-              defaultValue="admin"
-            />
-          </div>
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-300">
-              Şifre
-            </label>
-            <input
-              name="password"
+              id="password"
               type="password"
-              autoComplete="current-password"
-              className="mt-1 w-full rounded border border-slate-700 bg-slate-950/60 px-2 py-1 text-xs text-slate-100 outline-none focus:border-sky-500"
-              defaultValue="Gg.113355"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="shadow-inner appearance-none border border-slate-700 rounded-lg w-full py-2 px-3 bg-slate-800/60 text-slate-50 leading-tight focus:outline-none focus:ring-2 focus:ring-sky-600"
             />
           </div>
-          <button
-            type="submit"
-            className="w-full rounded-full bg-sky-500 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400"
-          >
-            Giriş Yap
+
+          {error && <p className="text-red-500 text-xs italic">{error}</p>}
+
+          <button type="submit" disabled={loading} className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline disabled:bg-slate-600 transition-colors">
+            {loading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
           </button>
         </form>
-
-        <p className="mt-3 text-[10px] text-slate-500">
-          Varsayılan bilgiler: <span className="font-mono">admin / Gg.113355</span>
-        </p>
       </div>
     </main>
   );

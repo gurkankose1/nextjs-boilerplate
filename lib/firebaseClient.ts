@@ -1,6 +1,8 @@
-// lib/firebaseClient.ts
-import { initializeApp, getApps } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+
+
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth, GoogleAuthProvider, onAuthStateChanged, User } from "firebase/auth";
+import { useEffect, useState } from "react";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -9,8 +11,25 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
 };
 
-export const firebaseApp =
-  getApps().length ? getApps()[0]! : initializeApp(firebaseConfig);
+// Firebase uygulamasını başlat
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-export const auth = getAuth(firebaseApp);
+export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Kullanıcı oturum durumunu dinleyen özel bir hook
+export const useAuth = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  return { user, loading };
+};

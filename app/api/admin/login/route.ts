@@ -1,41 +1,35 @@
-// app/api/admin/login/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { ADMIN_SESSION_COOKIE_NAME } from "@/lib/adminAuth";
 
-const ADMIN_USER = process.env.ADMIN_USER || "admin";
-const ADMIN_PASS = process.env.ADMIN_PASS || "Gg.113355";
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
-export async function POST(req: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const formData = await req.formData();
-    const username = String(formData.get("username") || "").trim();
-    const password = String(formData.get("password") || "").trim();
+    const { password } = await request.json();
 
-    if (username !== ADMIN_USER || password !== ADMIN_PASS) {
-      return NextResponse.json(
-        { ok: false, error: "Geçersiz kullanıcı adı veya şifre" },
-        { status: 401 }
-      );
+    const isAdmin = password === process.env.ADMIN_PASSWORD;
+
+    if (!isAdmin) {
+      return NextResponse.json({ message: 'Geçersiz şifre.' }, { status: 401 });
     }
 
-    // Cookie TÜM site için geçerli
-    const cookieStore = await cookies();
-    cookieStore.set(ADMIN_SESSION_COOKIE_NAME, "1", {
+    const adminSecret = process.env.ADMIN_SECRET;
+    if (!adminSecret) {
+        console.error("ADMIN_SECRET is not set in .env.local");
+        throw new Error("Sunucu yapılandırma hatası.");
+    }
+    
+    cookies().set('admin-secret', adminSecret, {
       httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",            // 🔴 ÖNEMLİ: /api çağrılarında da gönderilecek
-      maxAge: 60 * 60 * 8,  // 8 saat
+      secure: process.env.NODE_ENV !== 'development',
+      path: '/',
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 24 // 1 day
     });
 
-    // Başarılı login → admin ana sayfaya yönlendir
-    return NextResponse.redirect(new URL("/admin", req.url));
-  } catch (err: any) {
-    console.error("Error in /api/admin/login POST:", err);
-    return NextResponse.json(
-      { ok: false, error: "Internal error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: 'Giriş başarılı.' });
+
+  } catch (error) {
+    console.error("Login error:", error);
+    return NextResponse.json({ message: 'Giriş yapılırken bir hata oluştu.' }, { status: 500 });
   }
 }

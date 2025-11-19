@@ -1,30 +1,43 @@
-// lib/firebaseAdmin.ts
 import * as admin from "firebase-admin";
+import { ServiceAccount } from "firebase-admin";
 
-// Firebase admin uygulaması daha önce başlatıldıysa tekrar başlatma
+// Ortam değişkenlerini al. İsimler, Firebase'in rezerve ettiği isimlerle çakışmayacak şekilde değiştirildi.
+const projectId = process.env.ADMIN_PROJECT_ID;
+const clientEmail = process.env.ADMIN_CLIENT_EMAIL;
+// Private key, Google Secrets'tan tek satır olarak gelir,
+// bu yüzden '\\n' karakterlerini gerçek satır sonlarına çevirmemiz gerekir.
+const privateKey = process.env.ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
 let app: admin.app.App;
 
-try {
-  app = admin.app();
-} catch {
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
-
-  if (!projectId || !clientEmail || !privateKey) {
-    throw new Error("Eksik FIREBASE_* environment değişkenleri var!");
+function initializeFirebaseAdmin() {
+  // Firebase Admin SDK'sının daha önce başlatılıp başlatılmadığını kontrol et
+  if (!admin.apps.length) {
+    if (!projectId || !clientEmail || !privateKey) {
+      console.error("Firebase Admin SDK başlatılamadı: Gerekli ortam değişkenleri eksik. Lütfen App Hosting ayarlarından secrets'ları (ADMIN_PROJECT_ID, ADMIN_CLIENT_EMAIL, ADMIN_PRIVATE_KEY) kontrol edin.");
+      throw new Error("Eksik Firebase environment değişkenleri.");
+    }
+    
+    try {
+      app = admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId,
+          clientEmail,
+          privateKey,
+        } as ServiceAccount),
+        storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+      });
+    } catch (error) {
+      console.error("Firebase Admin SDK başlatılırken kritik bir hata oluştu:", error);
+      throw error;
+    }
   }
+  
+  const firestore = admin.firestore();
+  const auth = admin.auth();
+  const storage = admin.storage();
 
-  app = admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId,
-      clientEmail,
-      privateKey,
-    }),
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  });
+  return { app, firestore, auth, storage };
 }
 
-export const adminDb = admin.firestore();
-export const adminStorage = admin.storage();
-export default app;
+export const { app, firestore, auth, storage } = initializeFirebaseAdmin();

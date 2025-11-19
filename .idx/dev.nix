@@ -7,7 +7,7 @@
     # Proje için önerilen VS Code eklentilerini buraya ekleyebilirsiniz.
     # Örnek: "vscodevim.vim"
   ];
-  idx.previews = {
+  previews = {
     web = {
       command = [
         "npm"
